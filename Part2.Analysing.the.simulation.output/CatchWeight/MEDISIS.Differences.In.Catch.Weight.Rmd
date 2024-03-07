@@ -1,0 +1,151 @@
+---
+title: "MEDISIS Difference In Catch Weight"
+author: "Stephanie Hopkins"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE, fig.width=6, fig.height=6}
+
+rm(list = ls())
+gc()
+
+knitr::opts_chunk$set(echo=TRUE, message=FALSE, results = "hide")
+
+list.of.packages <- c("data.table","tidyverse", "cowplot")
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+
+library(data.table)
+library(tidyverse)
+library(cowplot)
+
+# To Replace with your file directory
+dir <- "C:/Users/steph/Documents"
+
+MEDISIS <- "/MEDISIS/Part2.Analysing.the.simulation.output/"
+
+path <- paste(dir,MEDISIS,sep="")
+
+```
+
+# Read the data and make a data frame
+
+Here we are interested in the comparison of simulated annual catch weight in the model by fleet and reported annual catch weight presented in FAO (2019). We use the first simulation under the base assumptions of the Status Quo for scenarios (i.e., simulation 0).
+
+FAO, 2019. GFCM: Working Group on Stock Assessment of Demersal Species (WGSAD) Benchmark session for the assessment of European hake in GSAs 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 19, 20, 22, 23 and 26. Rome.
+
+Values are compared against 2015-2018 total catch presented in section 3.2.7.2, subsection A, pp. 80-81 (FAO, 2019).
+
+```{r read.catchweight}
+
+data <- fread(paste(path, "Data/DifferenceInCatchWeight.csv", sep=""), header = T, sep=",")
+
+unique(data$Source)
+
+data$Source <- gsub("FAO","FAO.2019 Report",data$Source)
+data$Source <- gsub("ISIS","ISIS-Fish",data$Source)
+data$plotval  <- paste(data$Source, " - ", data$Country, sep="")
+data
+
+Combined.data <- aggregate(Value ~ Year + Source, FUN=sum, data=data)
+
+Combined.data$plotval <- paste(Combined.data$Source, " - ", "Both Countries", sep="")
+
+# Join data sets back together and remove country id column
+final.data <- rbind(data[,-2],Combined.data)
+
+final.data$plotval <- as.factor(final.data$plotval)
+
+breaks = c("FAO.2019 Report - Both Countries", 
+           "ISIS-Fish - Both Countries",
+           "FAO.2019 Report - Spain", 
+           "ISIS-Fish - Spain", 
+           "FAO.2019 Report - France",
+           "ISIS-Fish - France")
+
+```
+
+# Compute relative difference
+
+```{r relative.diff}
+
+ISISFR <- final.data %>% filter(plotval=="ISIS-Fish - France")
+
+FAOFR <- final.data %>% filter(plotval=="FAO.2019 Report - France")
+
+ISISFR$diff <- (ISISFR$Value - FAOFR$Value)/FAOFR$Value *100
+ISISFR$diff
+
+mean(c(-2.420242, 9.054594, 8.585859))
+
+ISISES <- final.data %>% filter(plotval=="ISIS-Fish - Spain")
+
+FAOES <- final.data %>% filter(plotval=="FAO.2019 Report - Spain")
+
+ISISES$dif <- (ISISES$Value - FAOES$Value)/FAOES$Value *100
+ISISES$dif
+
+ISISBO <- final.data %>% filter(plotval=="ISIS-Fish - Both Countries")
+
+FAOBO <- final.data %>% filter(plotval=="FAO.2019 Report - Both Countries")
+
+ISISBO$dif <- (ISISBO$Value - FAOBO$Value)/FAOBO$Value *100
+ISISBO$dif
+
+# Mean of percent change
+mean(c(-33.901345, 4.275996, 20.921986, 24.232082))
+
+# Absolute difference
+24.232082 - -33.901345
+
+# Percent change of absolute difference
+58.13343/mean(c(-33.901345, 4.275996, 20.921986, 24.232082))
+
+```
+
+# Make your life easy and save custom themes
+
+```{r plot.themes, echo=TRUE}
+
+line_chart_text_theme <- theme(axis.title.x = element_text(margin=margin(t=5,r=0,b=0,l=0), size = 14), axis.text.y = element_text(margin=margin(t=0,r=1,b=0,l=0), size = 12), axis.text.x.bottom = element_text(margin=margin(t=1,r=0,b=0,l=0), size = 12), axis.title.y = element_text(size = 14), strip.text = element_text(size=12), panel.spacing = unit(0.5, "cm")) 
+
+line_chart_legend_theme <- theme(legend.title = element_blank(), legend.text = element_text(size = 12),legend.text.align = 0, legend.direction = "horizontal", legend.spacing = unit(0.001, 'cm'), legend.key.height = unit(1.52, 'cm'), legend.key.width = unit(1.5, 'cm'), legend.position="bottom")
+
+```
+
+## Make a line chart
+
+```{r Fig.3, echo=TRUE}
+
+Validationplot <- ggplot() +
+  geom_line(data=final.data[final.data$plotval=="FAO.2019 Report - Both Countries",],aes(x=Year,y=Value,linetype=plotval),linewidth=1.5,col="#A6B07E") +
+  geom_line(data=final.data[final.data$plotval=="ISIS-Fish - Both Countries",],aes(x=Year,y=Value,linetype=plotval),linewidth=1.5,col="#A6B07E") +
+  geom_line(data=final.data[final.data$plotval=="FAO.2019 Report - Spain",],aes(x=Year,y=Value,linetype=plotval),linewidth=1.5,col="#C97064") +
+  geom_line(data=final.data[final.data$plotval=="ISIS-Fish - Spain",],aes(x=Year, y=Value, linetype=plotval),linewidth=1.5,col="#C97064") + 
+  geom_line(data=final.data[final.data$plotval=="FAO.2019 Report - France",],aes(x=Year,y=Value,linetype=plotval),linewidth=1.5,col="#E8BB63") +
+  geom_line(data=final.data[final.data$plotval=="ISIS-Fish - France",],aes(x=Year,y=Value,linetype=plotval),linewidth=1.5,col="#E8BB63") +
+  scale_linetype_manual(breaks=breaks, 
+                        values=c("FAO.2019 Report - Both Countries"="solid",
+                                 "ISIS-Fish - Both Countries"="dashed",
+                                 "FAO.2019 Report - Spain"="solid",
+                                 "ISIS-Fish - Spain"="dashed",
+                                 "FAO.2019 Report - France"="solid", 
+                                 "ISIS-Fish - France"="dashed"),
+                        labels=str_wrap(breaks,25)) +
+  xlab("Year") +
+  ylab("Catch Weight in Metric Tons") +
+  guides(linetype = guide_legend(override.aes = list(col = c("#A6B07E", "#A6B07E","#C97064", "#C97064","#E8BB63", "#E8BB63")))) +
+  theme_bw() +
+  line_chart_text_theme +
+  line_chart_legend_theme
+
+Validationplot
+
+ggsave2(filename="Fig.3.pdf",plot=Validationplot, device="pdf", path=paste(path,"Figures",sep=""), dpi=1200, width = 29.7, height = 21, unit="cm", limitsize = FALSE)
+
+```
+

@@ -1,0 +1,30 @@
+---
+title: "MEDISIS Simulation Design Table"
+author: "Stephanie Hopkins"
+date: "3/26/2021"
+output: 
+  html_document:
+    toc: TRUE
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+
+rm(list=ls())
+
+library(utils)
+
+```
+
+# Create sequential table
+
+We have 26 Scenarios that we need to test and three sources of uncertainty (Initial abundance ("c(0, 1)"), Recruitment level ("c(0, 1, 2)"), the the degree of Connectivity ("c(0, 1, 2)"). Because in the Java programming language iterations begin at 0 and not 1, we run the sequence from 0 to 27. Scenario 0 will correspond to Status Quo scenario.
+
+```{r}
+
+simulation_design <- expand.grid(c(0,1), c(0, 1, 2), c(0, 1, 2), seq(0,27))
+
+write.table(simulation_design, file="~/MEDISIS/Part1.Reproducing.the.simulation.data/ISIS.Fish.Input.Tables/simulation_design_28.csv", sep = ";", row.names = F, col.names = F)
+
+```

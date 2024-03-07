@@ -1,0 +1,1100 @@
+---
+title: "MEDISIS Population Biomass"
+author: "Stephanie Hopkins"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document:
+    toc: yes
+---
+
+```{r setup, include=FALSE, fig.width=6, fig.height=6}
+
+rm(list = ls())
+gc()
+
+knitr::opts_chunk$set(echo=TRUE, message=FALSE, results = "hide")
+
+list.of.packages <- c("data.table","tidyverse","cowplot","ggpubr")
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+
+library(data.table)
+library(tidyverse)
+library(cowplot)
+library(ggpubr)
+
+# To Replace with your file directory
+dir <- "C:/Users/steph/Documents"
+
+MEDISIS <- "/MEDISIS/Part2.Analysing.the.simulation.output/"
+
+path <- paste(dir,MEDISIS,sep="")
+
+```
+
+# Make your life easy and save custom themes
+
+```{r custom.theme}
+
+bar_chart_text_theme <- theme(axis.title.x = element_text(margin=margin(t=5,r=0,b=0,l=0), size = 14), axis.text.y = element_text(margin=margin(t=0,r=1,b=0,l=0), size = 12), axis.text.x.bottom = element_text(margin=margin(t=1,r=0,b=0,l=0), size = 12), axis.title.y = element_text(size = 14), strip.text = element_text(size=12), panel.spacing = unit(0.5, "cm")) 
+
+bar_chart_legend_theme <- theme(legend.title = element_blank(), legend.text = element_text(size = 12),legend.text.align = 0, legend.direction = "horizontal", legend.spacing = unit(0.001, 'cm'), legend.key.height = unit(1.52, 'cm'), legend.key.width = unit(1.5, 'cm'), legend.position="bottom")
+
+```
+
+# Create a custom colour palette
+
+Now that we are satisfied with the groupings, create a custom colour palette that matches colours with the: 2nd and 4th 3rd and 5th 7th and 8th 9th and 10th values.
+
+```{r colour.pallete, echo=FALSE}
+
+c_rel_diff <- c("#000000", #BLACK
+                "#0492C2", #CERULEAN
+                "#78C0f0", #SKY
+                "#008081", #TEAL
+                "#4F97A3", #TURKISH BLUE
+                "#CC9966", #TAN
+                "#a67556", #Brown
+                "#3DED97", #SEAFOAM
+                "#99EDC3", #MINT
+                "#32612D", #BASIL
+                "#597D35" #PICKLE
+) 
+
+#pie(rep(1, 11), col = c_rel_diff)
+
+```
+
+# Adjust the plot order
+
+```{r break.list}
+
+breaks_list <- c(
+  "StatusQuo",
+  "All-at-once Trawler Effort Reduction",
+  "All-at-once Effort Reduction Applied to All Gears",
+  "Gradual Trawler Effort Reduction",
+  "Gradual Effort Reduction Applied to All Gears",
+  "Seasonal Spatial Closure Single Effects",
+  "Annual Spatial Closure Single Effects",
+  "With 90-100m Isobaths Spatial Closure Combined Effects",
+  "Without 90-100m Isobaths Spatial Closure Combined Effects",
+  "Spatial Closure and Effort Reduction Combined Effects With the 90-100m Isobaths Closure",
+  "Spatial Closure and Effort Reduction Combined Effects Without the 90-100m Isobaths Closure")
+
+```
+
+# Load only biomass
+
+```{r biomass}
+
+name_RData_6.4 <- 'biomtot_6.4' 
+
+biomtot_6.4 <- fread(paste(path, "Data/", name_RData_6.4, '.csv', sep = ''))
+
+```
+
+# Join the simulation design table to the simulation output
+
+Apply the names of the Scenarios in the column designating their numeric values and graft this to the Data.
+
+```{r simulation.bind}
+
+simuDesign <- '/MEDISIS/Part1.Reproducing.the.simulation.data/ISIS.Fish.Input.Tables/simulation_design_28'
+
+simulationDesign <- fread(paste(dir, simuDesign,".csv", sep=""), sep=';', h=F)
+
+colnames(simulationDesign) =  c('InitialAbundance','Recruitment','Connectivity','Scenarios')
+
+simulationDesign$simu <- seq(0, 503, 1)
+
+step <- unique(biomtot_6.4$step)
+nbYear <- length(step)/12 
+YEAR <- sort(rep(seq(2015,2014+nbYear,1), 12))
+MONTH <- rep(seq(1,12,1),nbYear)
+tabStep <- data.frame(step, YEAR, MONTH)
+
+biomtot_6.4 <- inner_join(biomtot_6.4, tabStep, by=c('step'))
+biomtot_6.4 <- inner_join(biomtot_6.4, simulationDesign, by=c('simu'))
+
+table_Sce_6.4 <- data.frame(Scenarios=as.character(c(0:27)),SceName=c("StatusQuo","Trawler_30_Red","Trawler_40_Red","Trawler_50_Red","Trawler_10_20_30","Trawler_10_17.5_25_32.5_40","Trawler_10_20_30_40_50","AllGears_30_Red","AllGears_40_Red","AllGears_50_Red","AllGears_10_20_30","AllGears_10_17.5_25_32.5_40","AllGears_10_20_30_40_50","Original_FRA_allYear","Northward_Expansion_of_FRA_Season","Northward_Expansion_of_FRA_allYear","90-100_Isobaths_Closure_Season","90-100_Isobaths_Closure_allYear","Offshore_Closures_Season","Offshore_Closures_allYear","Northward_Expansion_of_FRA_90-100m_Offshore_Closures_Combined","Northward_Expansion_of_FRA_90-100m_Offshore_allYear_Closures_Combined","Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures","Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures_allGears","Northward_Expansion_of_FRA_Offshore_Closures_Combined","Northward_Expansion_of_FRA_Offshore_allYear_Closures_Combined","Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures","Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures_allGears"))
+
+```
+
+# Isolate begininning of month
+
+We are only interested in January biomass before simulations run. Because age zero values are fixed in the model, we can drop age class 0 from the biomass analyses. However, it will not have an effect if you leave them because we only take the average at the end after summing like parts. 
+
+```{r begin.month}
+
+biomass_janv <- biomtot_6.4[biomtot_6.4$step==0 | biomtot_6.4$step==12 | biomtot_6.4$step==24 | biomtot_6.4$step==36 | biomtot_6.4$step==48 | biomtot_6.4$step==60 | biomtot_6.4$step==72 | biomtot_6.4$step==84 | biomtot_6.4$step==96 | biomtot_6.4$step==108, ]
+
+
+testeffects_age.zero <- subset(biomass_janv, group == 0)
+
+biomass_janv <- subset(biomass_janv, group != 0)
+
+```
+
+# Combine all values into a single data table
+
+Recall the the management scenarios are implemented in December of 2019... Under the management scenarios juvenile catch should have gone down 20% from the average of the reference period via spatial closures and visible following one year.
+
+```{r biomass.table}
+
+# For Population Biomass:
+biomass_year_group <- setNames(aggregate(value~YEAR+group+simu+InitialAbundance+Recruitment+Connectivity+Scenarios,data=biomass_janv,sum),c("YEAR","GROUP","simu","InitialAbundance","Recruitment","Connectivity","Scenarios","Biom"))
+
+biomass_check1 <-subset(biomass_year_group, InitialAbundance == 0 & Recruitment == 0 & Connectivity == 0 & Scenarios == 16 & YEAR %in% c(2020, 2024))
+
+biomass_check1.1 <- aggregate(Biom ~ YEAR + GROUP, data = biomass_check1, FUN = sum)
+
+# View(biomass_check1.1)
+
+biomass_check2 <-subset(biomass_year_group, InitialAbundance == 0 & Recruitment == 0 & Connectivity == 0 & Scenarios == 16 & YEAR %in% c(2021, 2024))
+
+biomass_check2.1 <- aggregate(Biom ~ YEAR + GROUP, data = biomass_check2, FUN = sum)
+
+# View(biomass_check2.1)
+
+```
+
+# Relative difference graphs compared to the reference simulation
+
+Recall the the management scenarios are implemented in December of 2019... Under the management scenarios juvenile biomass should have gone down 20% from the average of the reference period via spatial closures and visible following one year.
+
+```{r key.binding}
+
+biomass_year_group$CombiSimu<-paste0("Init",biomass_year_group$InitialAbundance,
+                                     "_Recr",biomass_year_group$Recruitment,
+                                     "_Conn",biomass_year_group$Connectivity,
+                                     "_Scen",biomass_year_group$Scenarios)
+
+Biomass_Ref<-biomass_year_group[biomass_year_group$CombiSimu=="Init0_Recr0_Conn0_Scen0",]
+Biomass_Ref<-as.data.frame(Biomass_Ref[,c("YEAR","GROUP","Biom")])
+names(Biomass_Ref)[3]<-"Biom_ref_wg"
+
+```
+
+# Isolate the reference scenario and value (StatusQuosQuo with original params)
+
+Checking against the simulated results from the compiled data here and ISIS-Fish terminal, the same output is achieved. Here we choose StatusQuosQuo scenario and the baseline assumptions for recruitment, initial abundance, or connectivity and we take the mean of 2015-2017 to compare against.
+
+```{r reference.scenario}
+
+biomass_avec_ref <- left_join(biomass_year_group, Biomass_Ref,by=c("YEAR","GROUP"))
+
+# select only of reference simulations (cad: Init=0, Rec=0, Conn=0)
+biomass_avec_ref<-biomass_avec_ref[(biomass_avec_ref$InitialAbundance=="0" & biomass_avec_ref$Recruitment=="0" & biomass_avec_ref$Connectivity=="0"),]
+biomass_avec_ref<-as.data.table(biomass_avec_ref)
+
+```
+
+# Global biomass and prep figures
+
+The code below first looks at the global biomass at the beginning of the month and scenario trends after the first and fifth year of implemented.
+
+## Compute reference value
+
+```{r global.biomass.ref}
+
+biomass_year_ref_part1 <- biomass_avec_ref[,list(Biom_sim = sum(Biom), Biom_ref_wg = sum(Biom_ref_wg)), by = list(YEAR, simu, InitialAbundance, Recruitment, Connectivity, Scenarios)]
+
+Biomass_ref_aggregated <- subset(biomass_avec_ref, Scenarios==0)
+
+Biomass_ref_aggregated <- aggregate(Biom_ref_wg~YEAR,data = Biomass_ref_aggregated,sum)
+
+Biomass_ref_aggregated$YEAR <- as.character(Biomass_ref_aggregated$YEAR)
+
+Biomass_ref_years <- subset(Biomass_ref_aggregated,YEAR<="2017")
+
+Biomass_ref_years_final <- mean(Biomass_ref_years$Biom_ref_wg)
+
+```
+
+## Compute the relative difference
+
+Keep StatusQuo for comparison purposes, but add horizontal dashed line from the relative different weight value.
+
+```{r rel.diff.global}
+
+biomass_year_ref_part1$Rel_Diff_biom <- ((biomass_year_ref_part1$Biom_sim - Biomass_ref_years_final) / Biomass_ref_years_final) * 100
+
+unique(is.na(biomass_year_ref_part1))
+
+```
+
+## Prepare the data frame
+
+Here we are interested in the global biomass only.
+
+```{r global.prep}
+
+biomass_year_ref_part2 <- biomass_year_ref_part1[,c("YEAR","Scenarios","Rel_Diff_biom")]
+
+biomass_year_ref_part2$Scenarios <- as.factor(as.numeric(biomass_year_ref_part2$Scenarios))
+
+biomass_year_ref_part2 <- merge(biomass_year_ref_part2,table_Sce_6.4,by=c("Scenarios"))
+
+biomass_year_ref_part2$SceName <- factor(biomass_year_ref_part2$SceName, 
+                                         levels = table_Sce_6.4$SceName)
+
+```
+
+## Create groups by scenario type
+
+The original study investigates 28 scenario measures and 504 combinations. But we simplify this here for the international audience.
+
+```{r global.group.scen}
+
+dim(biomass_year_ref_part2)
+Scenario_type <- seq(1:280)
+biomass_year_ref_part2 <- cbind(biomass_year_ref_part2, Scenario_type)
+View(biomass_year_ref_part2)
+
+biomass_year_ref_part2$Scenario_type <- replace(biomass_year_ref_part2$Scenario_type, c(1:10), "StatusQuo")
+
+biomass_year_ref_part2$Scenario_type <- replace(biomass_year_ref_part2$Scenario_type, c(11:20,121:130,211:220), "All-at-once Trawler Effort Reduction")
+
+biomass_year_ref_part2$Scenario_type <- replace(biomass_year_ref_part2$Scenario_type, c(251:280), "All-at-once Effort Reduction Applied to All Gears")
+
+biomass_year_ref_part2$Scenario_type <- replace(biomass_year_ref_part2$Scenario_type, c(221:250), "Gradual Trawler Effort Reduction")
+
+biomass_year_ref_part2$Scenario_type <- replace(biomass_year_ref_part2$Scenario_type, c(21:50), "Gradual Effort Reduction Applied to All Gears")
+
+biomass_year_ref_part2$Scenario_type <- replace(biomass_year_ref_part2$Scenario_type, c(61:70,81:90,101:110), "Seasonal Spatial Closure Single Effects")
+
+biomass_year_ref_part2$Scenario_type <- replace(biomass_year_ref_part2$Scenario_type, c(51:60,71:80,91:100,111:120), "Annual Spatial Closure Single Effects")
+
+biomass_year_ref_part2$Scenario_type <- replace(biomass_year_ref_part2$Scenario_type, c(131:150), "With 90-100m Isobaths Spatial Closure Combined Effects")
+
+biomass_year_ref_part2$Scenario_type <- replace(biomass_year_ref_part2$Scenario_type, c(171:190), "Without 90-100m Isobaths Spatial Closure Combined Effects")
+
+biomass_year_ref_part2$Scenario_type <- replace(biomass_year_ref_part2$Scenario_type, c(151:170), "Spatial Closure and Effort Reduction Combined Effects With the 90-100m Isobaths Closure")
+
+biomass_year_ref_part2$Scenario_type <- replace(biomass_year_ref_part2$Scenario_type, c(191:210), "Spatial Closure and Effort Reduction Combined Effects Without the 90-100m Isobaths Closure")
+
+biomass_year_ref_part2.df <- as.data.frame(biomass_year_ref_part2)
+biomass_year_ref_part2.df$Scenari_type <- as.factor(biomass_year_ref_part2.df$Scenario_type)
+
+```
+
+## Reorder the groups that we are interested in
+
+```{r global.reorder}
+
+biomass_year_ref_part2.df_reorder <- 
+  biomass_year_ref_part2.df %>% mutate(SceName_short = 
+      recode_factor(SceName,
+                  "StatusQuo"= "a",
+                  "Trawler_30_Red"= "b",
+                  "AllGears_30_Red" = "c",
+                  "Trawler_40_Red" = "d",
+                  "AllGears_40_Red"= "e",
+                  "Trawler_50_Red"= "f",
+                  "AllGears_50_Red"= "g",
+                  "Trawler_10_20_30"= "h",
+                  "AllGears_10_20_30"= "i",
+                  "Trawler_10_17.5_25_32.5_40"= "j",
+                  "AllGears_10_17.5_25_32.5_40"= "k",
+                  "Trawler_10_20_30_40_50"= "l",
+                  "AllGears_10_20_30_40_50"= "m",
+                  "Original_FRA_allYear"= "n",
+                  "Northward_Expansion_of_FRA_Season"= "o",
+                  "Northward_Expansion_of_FRA_allYear" = "p",
+                  "90-100_Isobaths_Closure_Season"= "q",
+                  "90-100_Isobaths_Closure_allYear"= "r", 
+                  "Offshore_Closures_Season"= "s",
+                  "Offshore_Closures_allYear"= "t",
+                  "Northward_Expansion_of_FRA_90-100m_Offshore_Closures_Combined"= "u",
+                  "Northward_Expansion_of_FRA_Offshore_Closures_Combined" = "v",
+                  "Northward_Expansion_of_FRA_90-100m_Offshore_allYear_Closures_Combined" = "w",
+                  "Northward_Expansion_of_FRA_Offshore_allYear_Closures_Combined" = "x",
+                  "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures"= "y",
+                  "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures"= "z",
+                  "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures_allGears"= "aa",
+                  "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures_allGears"= "bb"
+                ))
+
+```
+
+## Save output
+
+```{r save.global.output}
+
+fwrite(biomass_year_ref_part2.df_reorder, file=paste(path, "Data/global.biomass.per.year.csv", sep=""), sep=";")
+
+```
+
+## Graphing the relative difference in biomass
+
+The following code can be recycled throughout the paper and is intended to allow for easier comparison. Keep in mind that the default text size in ggplot2 is 11pt. We need to increase this.
+
+Following the fifth year of implementation:
+
+```{r year5.global}
+
+biomass_year_ref_part2.df_reorder_plot <-
+  ggplot(data = biomass_year_ref_part2.df_reorder[biomass_year_ref_part2.df_reorder$YEAR==2024,])+
+  aes(x=SceName_short,y=Rel_Diff_biom,fill=Scenario_type)+
+  geom_bar(stat="identity")+
+  geom_hline(data=biomass_year_ref_part2.df_reorder %>% filter(Scenario_type=="StatusQuo"&YEAR==2024), aes(yintercept= Rel_Diff_biom),colour="black",linewidth=0.75,linetype="dashed")+
+  scale_fill_manual(values=c_rel_diff,breaks=breaks_list,labels=str_wrap(breaks_list,25))+
+  labs(fill=" ")+
+  xlab("Scenario Code")+
+  ylab("Percent Change in Biomass from Reference Period")+
+  geom_hline(yintercept=0)+
+  theme_bw() +
+  bar_chart_text_theme+ 
+  bar_chart_legend_theme+
+  guides(fill = guide_legend(byrow = TRUE))
+  
+biomass_year_ref_part2.df_reorder_plot
+
+```
+
+Following the first year of implementation:
+
+```{r year1.global}
+
+biomass_year_ref_part2.df_reorder_plot2 <- 
+  ggplot(data=biomass_year_ref_part2.df_reorder[biomass_year_ref_part2.df_reorder$YEAR==2021,])+
+  aes(x=SceName_short,y=Rel_Diff_biom,fill=Scenario_type)+
+  geom_bar(stat="identity")+
+  geom_hline(data=biomass_year_ref_part2.df_reorder %>% filter(Scenario_type=="StatusQuo"&YEAR==2021), aes(yintercept= Rel_Diff_biom),colour="black",linewidth=0.75,linetype="dashed")+
+  scale_fill_manual(values=c_rel_diff,breaks=breaks_list,labels=str_wrap(breaks_list,25))+
+  labs(fill=" ")+
+  xlab("Scenario Code")+
+  ylab("Percent Change in Biomass from Reference Period")+
+  geom_hline(yintercept=0)+
+  theme_bw() + 
+  bar_chart_text_theme+ 
+  bar_chart_legend_theme+
+  guides(fill = guide_legend(byrow = TRUE))
+
+biomass_year_ref_part2.df_reorder_plot2
+
+```
+
+# Biomass by age and prep figures
+
+The code below now looks at the catch weight by age and scenario trends after the first and fifth year of implemented.
+
+## Compute reference values
+
+Checking the reference values from the simulated results or ISIS-Fish terminal, you will find that both work and have the same output.
+
+
+```{r age.ref.vals}
+
+biomass_year_age_ref_part1 <- biomass_avec_ref[, list(Biom_sim = sum(Biom), Biom_ref_wg = sum(Biom_ref_wg)), by = list(YEAR,GROUP,simu,InitialAbundance,Recruitment,Connectivity,Scenarios)] 
+
+Biomass_age_ref_aggregated <- subset(biomass_avec_ref,Scenarios==0)
+
+Biomass_age_ref_aggregated <- aggregate(Biom_ref_wg~YEAR+GROUP,
+                                        data = Biomass_age_ref_aggregated,sum)
+
+Biomass_age_ref_aggregated$YEAR <- as.character(Biomass_age_ref_aggregated$YEAR)
+
+Biomass_age_ref_years <-subset(Biomass_age_ref_aggregated,YEAR<="2017")
+
+Biomass_age_ref_ag_years_final <- aggregate(Biom_ref_wg~GROUP,
+                                            data=Biomass_age_ref_years, FUN=mean)
+
+```
+
+## Compute the relative difference
+
+Here ware interested in the global biomass by age, so a relative difference must be calculated for each independently. 
+
+```{r rel.diff.age}
+
+age1 <- subset(biomass_year_age_ref_part1,GROUP==1)
+age1$Rel_Diff_biom<-((age1$Biom_sim-Biomass_age_ref_ag_years_final[1,2])/Biomass_age_ref_ag_years_final[1,2])*100
+
+age2 <- subset(biomass_year_age_ref_part1,GROUP==2)
+age2$Rel_Diff_biom<-((age2$Biom_sim-Biomass_age_ref_ag_years_final[2,2])/Biomass_age_ref_ag_years_final[2,2])*100
+
+age3 <- subset(biomass_year_age_ref_part1,GROUP==3)
+age3$Rel_Diff_biom<-((age3$Biom_sim-Biomass_age_ref_ag_years_final[3,2])/Biomass_age_ref_ag_years_final[3,2])*100
+
+age4 <- subset(biomass_year_age_ref_part1,GROUP==4)
+age4$Rel_Diff_biom<-((age4$Biom_sim-Biomass_age_ref_ag_years_final[4,2])/Biomass_age_ref_ag_years_final[4,2])*100
+
+age5 <- subset(biomass_year_age_ref_part1,GROUP==5)
+age5$Rel_Diff_biom<-((age5$Biom_sim-Biomass_age_ref_ag_years_final[5,2])/Biomass_age_ref_ag_years_final[5,2])*100
+
+RelDiff_byAge_Biomass <- do.call("rbind", list(age1,age2,age3,age4,age5))
+
+```
+
+## Prepare the data frame
+
+```{r age.prep}
+
+biomass_year_age_ref_part2 <- RelDiff_byAge_Biomass[,c("YEAR","GROUP","Scenarios","Rel_Diff_biom")]
+
+biomass_year_age_ref_part2$Scenarios <- as.factor(as.numeric(biomass_year_age_ref_part2$Scenarios))
+
+biomass_year_age_ref_part2 <- merge(biomass_year_age_ref_part2,table_Sce_6.4,by=c("Scenarios"))
+
+biomass_year_age_ref_part2$SceName <- factor(biomass_year_age_ref_part2$SceName, levels = table_Sce_6.4$SceName)
+
+```
+
+## Create groups by scenario type
+
+The original study investigates 28 scenario measures and 504 combinations. But we simplify this here for the international audience.
+  
+```{r age.group.scen}
+
+dim(biomass_year_age_ref_part2)
+Scenario_type <- seq(1:1400)
+biomass_year_age_ref_part2 <- cbind(biomass_year_age_ref_part2, Scenario_type)
+# View(biomass_year_age_ref_part2)
+
+biomass_year_age_ref_part2$Scenario_type <- 
+  replace(biomass_year_age_ref_part2$Scenario_type,c(1:50),"StatusQuo")
+
+biomass_year_age_ref_part2$Scenario_type <- 
+  replace(biomass_year_age_ref_part2$Scenario_type,c(51:100,601:650,1051:1100),"All-at-once Trawler Effort Reduction")
+
+biomass_year_age_ref_part2$Scenario_type <- 
+  replace(biomass_year_age_ref_part2$Scenario_type,c(1251:1400),"All-at-once Effort Reduction Applied to All Gears")
+
+biomass_year_age_ref_part2$Scenario_type <- 
+  replace(biomass_year_age_ref_part2$Scenario_type,c(1101:1250),"Gradual Trawler Effort Reduction")
+
+biomass_year_age_ref_part2$Scenario_type <- 
+  replace(biomass_year_age_ref_part2$Scenario_type,c(101:250),"Gradual Effort Reduction Applied to All Gears")
+
+biomass_year_age_ref_part2$Scenario_type <- 
+  replace(biomass_year_age_ref_part2$Scenario_type,c(301:350,401:450,501:550),"Seasonal Spatial Closure Single Effects")
+
+biomass_year_age_ref_part2$Scenario_type <- 
+  replace(biomass_year_age_ref_part2$Scenario_type,c(251:300,351:400,451:500,551:600),"Annual Spatial Closure Single Effects")
+
+biomass_year_age_ref_part2$Scenario_type <- 
+  replace(biomass_year_age_ref_part2$Scenario_type,c(651:750),"With 90-100m Isobaths Spatial Closure Combined Effects")
+
+biomass_year_age_ref_part2$Scenario_type <- 
+  replace(biomass_year_age_ref_part2$Scenario_type,c(851:950),"Without 90-100m Isobaths Spatial Closure Combined Effects")
+
+biomass_year_age_ref_part2$Scenario_type <- 
+  replace(biomass_year_age_ref_part2$Scenario_type,c(751:850),"Spatial Closure and Effort Reduction Combined Effects With the 90-100m Isobaths Closure")
+
+biomass_year_age_ref_part2$Scenario_type <- 
+  replace(biomass_year_age_ref_part2$Scenario_type,c(951:1050),"Spatial Closure and Effort Reduction Combined Effects Without the 90-100m Isobaths Closure")
+
+biomass_year_age_ref_part2.df <- as.data.frame(biomass_year_age_ref_part2)
+biomass_year_age_ref_part2.df$Scenario_type <- as.factor(biomass_year_age_ref_part2.df$Scenario_type)
+
+```
+
+## Reorder the groups that we are interested in
+
+```{r age.reorder}
+
+biomass_year_age_ref_part2.df_reorder <- 
+  biomass_year_age_ref_part2.df %>% mutate(
+    SceName_short = 
+      recode_factor(SceName,
+                  "StatusQuo"= "a",
+                  "Trawler_30_Red"= "b",
+                  "AllGears_30_Red" = "c",
+                  "Trawler_40_Red" = "d",
+                  "AllGears_40_Red"= "e",
+                  "Trawler_50_Red"= "f",
+                  "AllGears_50_Red"= "g",
+                  "Trawler_10_20_30"= "h",
+                  "AllGears_10_20_30"= "i",
+                  "Trawler_10_17.5_25_32.5_40"= "j",
+                  "AllGears_10_17.5_25_32.5_40"= "k",
+                  "Trawler_10_20_30_40_50"= "l",
+                  "AllGears_10_20_30_40_50"= "m",
+                  "Original_FRA_allYear"= "n",
+                  "Northward_Expansion_of_FRA_Season"= "o",
+                  "Northward_Expansion_of_FRA_allYear" = "p",
+                  "90-100_Isobaths_Closure_Season"= "q",
+                  "90-100_Isobaths_Closure_allYear"= "r", 
+                  "Offshore_Closures_Season"= "s",
+                  "Offshore_Closures_allYear"= "t",
+                  "Northward_Expansion_of_FRA_90-100m_Offshore_Closures_Combined"= "u",
+                  "Northward_Expansion_of_FRA_Offshore_Closures_Combined" = "v",
+                  "Northward_Expansion_of_FRA_90-100m_Offshore_allYear_Closures_Combined" = "w",
+                  "Northward_Expansion_of_FRA_Offshore_allYear_Closures_Combined" = "x",
+                  "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures"= "y",
+                  "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures"= "z",
+                  "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures_allGears"= "aa",
+                  "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures_allGears"= "bb"
+                ))
+
+```
+
+## Adjust the colour palette
+
+```{r adj.age.palette}
+
+breaks_list_rep_biom <- rep_len(x=breaks_list,length.out=50)
+
+c_rel_diff_rep_biom <- rep_len(x=c_rel_diff,length.out=50)
+# pie(rep(1, 50), col=c_rel_diff_rep_biom)
+
+```
+
+## Graphing the relative difference in biomass by age
+
+Following the fifth year of implementation, check for global age specific patterns.
+
+```{r year5.age}
+
+biomass_year_age_ref_part2.df_reorder_plot <-
+  ggplot(data=biomass_year_age_ref_part2.df_reorder[biomass_year_age_ref_part2.df_reorder$YEAR==2024,])+
+  aes(x=SceName_short,y= Rel_Diff_biom,fill=Scenario_type)+ 
+  geom_bar(stat="identity",position=position_dodge())+ 
+  facet_grid(GROUP~.,scales="free")+ 
+  geom_hline(data=biomass_year_age_ref_part2.df_reorder %>% filter(Scenario_type=="StatusQuo"&YEAR==2024), aes(yintercept= Rel_Diff_biom),colour="black",linewidth=0.75,linetype="dashed")+
+  scale_fill_manual(values=c_rel_diff_rep_biom,breaks=breaks_list_rep_biom,labels=str_wrap(breaks_list_rep_biom,25))+
+  labs(fill = " ")+
+  xlab("Scenario Code")+
+  ylab("Percent Change in Biomass from Reference Period")+
+  geom_hline(yintercept=0)+
+  theme_bw() +
+  bar_chart_text_theme+
+  bar_chart_legend_theme+
+  guides(fill = guide_legend(byrow = TRUE))
+
+biomass_year_age_ref_part2.df_reorder_plot
+  
+```
+
+Following the first year of implementation, check for global age specific patterns. 
+
+```{r year1.age}
+
+biomass_year_age_ref_part2.df_reorder_plot2 <-
+  ggplot(data=biomass_year_age_ref_part2.df_reorder[biomass_year_age_ref_part2.df_reorder$YEAR==2021,])+
+  aes(x=SceName_short,y= Rel_Diff_biom,fill=Scenario_type)+ 
+  geom_bar(stat="identity",position=position_dodge())+ 
+  facet_grid(GROUP~.,scales="free")+
+  geom_hline(data=biomass_year_age_ref_part2.df_reorder %>% filter(Scenario_type=="StatusQuo"&YEAR==2021), aes(yintercept= Rel_Diff_biom),colour="black",linewidth=0.75,linetype="dashed")+
+  scale_fill_manual(values=c_rel_diff_rep_biom,breaks=breaks_list_rep_biom,labels=str_wrap(breaks_list_rep_biom,25))+
+  labs(fill = " ")+
+  xlab("Scenario Code")+
+  ylab("Percent Change in Biomass from Reference Period")+
+  geom_hline(yintercept=0)+
+  theme_bw() +
+  bar_chart_text_theme+
+  bar_chart_legend_theme+
+  guides(fill = guide_legend(byrow = TRUE))
+
+biomass_year_age_ref_part2.df_reorder_plot2
+  
+```
+
+# Biomass for only juveniles and prep figures
+
+The code below now looks at the biomass for juveniles and scenario trends after the first and fifth year of implemented. Because age class 0 values are forced in the model, we are onlöy checking for unique patterns for age class 1. 
+
+## Compute reference values
+
+```{r juvenile.ref.vals}
+
+juvenile_biomass_avec_ref <- biomass_avec_ref[biomass_avec_ref$GROUP<2,]
+
+juvenile_biomass_ref_part1 <- juvenile_biomass_avec_ref[, list(Biom_sim = sum(Biom), Biom_ref_wg = sum(Biom_ref_wg)), by = list(YEAR,simu,InitialAbundance,Recruitment,Connectivity,Scenarios)]
+
+Biomass_juveniles_ref_aggregated <- subset(juvenile_biomass_avec_ref,Scenarios==0)
+
+Biomass_juveniles_ref_aggregated <- 
+  aggregate(Biom_ref_wg~YEAR,
+            data = Biomass_juveniles_ref_aggregated,sum)
+
+Biomass_juveniles_ref_aggregated$YEAR <- as.character(Biomass_juveniles_ref_aggregated$YEAR)
+
+Biomass_juveniles_ref_years <-subset(Biomass_juveniles_ref_aggregated,YEAR<="2017")
+
+Biomass_juveniles_ref_ag_years_final <- mean(Biomass_juveniles_ref_years$Biom_ref_wg)
+
+```
+
+## Compute the relative difference
+
+Here ware interested in the global biomass for juveniles, so a relative difference must be calculated for each independently.
+
+```{r}
+
+# Calculate relative differences
+juvenile_biomass_ref_part1$Rel_Diff_biom <- ((juvenile_biomass_ref_part1$Biom_sim - Biomass_juveniles_ref_ag_years_final)/Biomass_juveniles_ref_ag_years_final)*100
+
+```
+
+## Prepare the data frame
+
+```{r juvenile.prep}
+
+juvenile_biomass_ref_part2 <- juvenile_biomass_ref_part1[,c("YEAR","Scenarios","Rel_Diff_biom")]
+
+juvenile_biomass_ref_part2$Scenarios <- as.factor(as.numeric(juvenile_biomass_ref_part2$Scenarios))
+
+juvenile_biomass_ref_part2 <- merge(juvenile_biomass_ref_part2,table_Sce_6.4,by=c("Scenarios"))
+
+juvenile_biomass_ref_part2$SceName <- factor(juvenile_biomass_ref_part2$SceName, levels = table_Sce_6.4$SceName)
+
+```
+
+## Create groups by scenario type
+
+The original study investigates 28 scenario measures and 504 combinations. But we simplify this here for the international audience.
+
+```{r juvenile.group.scen}
+
+dim(juvenile_biomass_ref_part2)
+Scenario_type <- seq(1:280)
+juvenile_biomass_ref_part2 <- cbind(juvenile_biomass_ref_part2, Scenario_type)
+# View(juvenile_biomass_ref_part2)
+
+juvenile_biomass_ref_part2$Scenario_type <- 
+  replace(juvenile_biomass_ref_part2$Scenario_type,c(1:10),"StatusQuo")
+
+juvenile_biomass_ref_part2$Scenario_type <- 
+  replace(juvenile_biomass_ref_part2$Scenario_type,c(11:20,121:130,211:230),"All-at-once Trawler Effort Reduction")
+
+juvenile_biomass_ref_part2$Scenario_type <- 
+  replace(juvenile_biomass_ref_part2$Scenario_type,c(251:280),"All-at-once Effort Reduction Applied to All Gears")
+
+juvenile_biomass_ref_part2$Scenario_type <- 
+  replace(juvenile_biomass_ref_part2$Scenario_type,c(221:250),"Gradual Trawler Effort Reduction")
+
+juvenile_biomass_ref_part2$Scenario_type <- 
+  replace(juvenile_biomass_ref_part2$Scenario_type,c(21:50),"Gradual Effort Reduction Applied to All Gears")
+
+juvenile_biomass_ref_part2$Scenario_type <- 
+  replace(juvenile_biomass_ref_part2$Scenario_type,c(61:70,81:90,101:110),"Seasonal Spatial Closure Single Effects")
+
+juvenile_biomass_ref_part2$Scenario_type <- 
+  replace(juvenile_biomass_ref_part2$Scenario_type,c(51:60,71:80,91:100,111:120),"Annual Spatial Closure Single Effects")
+
+juvenile_biomass_ref_part2$Scenario_type <- 
+  replace(juvenile_biomass_ref_part2$Scenario_type,c(131:150),"With 90-100m Isobaths Spatial Closure Combined Effects")
+
+juvenile_biomass_ref_part2$Scenario_type <- 
+  replace(juvenile_biomass_ref_part2$Scenario_type,c(171:190),"Without 90-100m Isobaths Spatial Closure Combined Effects")
+
+juvenile_biomass_ref_part2$Scenario_type <- 
+  replace(juvenile_biomass_ref_part2$Scenario_type,c(151:170),"Spatial Closure and Effort Reduction Combined Effects With the 90-100m Isobaths Closure")
+
+juvenile_biomass_ref_part2$Scenario_type <- 
+  replace(juvenile_biomass_ref_part2$Scenario_type,c(191:210),"Spatial Closure and Effort Reduction Combined Effects Without the 90-100m Isobaths Closure")
+
+juvenile_biomass_ref_part2.df <- as.data.frame(juvenile_biomass_ref_part2)
+juvenile_biomass_ref_part2.df$Scenario_type <- as.factor(juvenile_biomass_ref_part2.df$Scenario_type)
+
+```
+
+## Reorder the groups that we are interested in
+
+```{r juvenile.reorder}
+
+juvenile_biomass_ref_part2.df_reorder <- 
+  juvenile_biomass_ref_part2.df %>% mutate(
+    SceName_short = 
+      recode_factor(SceName,
+                  "StatusQuo"= "a",
+                  "Trawler_30_Red"= "b",
+                  "AllGears_30_Red" = "c",
+                  "Trawler_40_Red" = "d",
+                  "AllGears_40_Red"= "e",
+                  "Trawler_50_Red"= "f",
+                  "AllGears_50_Red"= "g",
+                  "Trawler_10_20_30"= "h",
+                  "AllGears_10_20_30"= "i",
+                  "Trawler_10_17.5_25_32.5_40"= "j",
+                  "AllGears_10_17.5_25_32.5_40"= "k",
+                  "Trawler_10_20_30_40_50"= "l",
+                  "AllGears_10_20_30_40_50"= "m",
+                  "Original_FRA_allYear"= "n",
+                  "Northward_Expansion_of_FRA_Season"= "o",
+                  "Northward_Expansion_of_FRA_allYear" = "p",
+                  "90-100_Isobaths_Closure_Season"= "q",
+                  "90-100_Isobaths_Closure_allYear"= "r", 
+                  "Offshore_Closures_Season"= "s",
+                  "Offshore_Closures_allYear"= "t",
+                  "Northward_Expansion_of_FRA_90-100m_Offshore_Closures_Combined"= "u",
+                  "Northward_Expansion_of_FRA_Offshore_Closures_Combined" = "v",
+                  "Northward_Expansion_of_FRA_90-100m_Offshore_allYear_Closures_Combined" = "w",
+                  "Northward_Expansion_of_FRA_Offshore_allYear_Closures_Combined" = "x",
+                  "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures"= "y",
+                  "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures"= "z",
+                  "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures_allGears"= "aa",
+                  "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures_allGears"= "bb"
+                ))
+
+```
+
+# Biomass for mature individuals and prep figures
+
+The code below now looks at the biomass for mature individuals and scenario trends after the first and fifth year of implemented. 
+
+## Compute reference values
+
+```{r mature.ref.vals}
+
+mature_biomass_avec_ref <- biomass_avec_ref[biomass_avec_ref$GROUP>1,]
+
+mature_biomass_ref_part1 <- mature_biomass_avec_ref[, list(Biom_sim = sum(Biom), Biom_ref_wg = sum(Biom_ref_wg)), by = list(YEAR,simu,InitialAbundance,Recruitment,Connectivity,Scenarios)]
+
+Biomass_mature_ref_aggregated <- subset(mature_biomass_avec_ref,Scenarios==0)
+
+Biomass_mature_ref_aggregated <- aggregate(Biom_ref_wg~YEAR,
+                                           data = Biomass_mature_ref_aggregated,sum)
+
+Biomass_mature_ref_aggregated$YEAR <- as.character(Biomass_mature_ref_aggregated$YEAR)
+
+Biomass_mature_ref_years <-subset(Biomass_mature_ref_aggregated,YEAR<="2017")
+
+Biomass_mature_ref_ag_years_final <- mean(Biomass_mature_ref_years$Biom_ref_wg)
+
+```
+
+## Compute the relative dfference
+
+```{r rel.diff.mature}
+
+# Calculate relative differences
+mature_biomass_ref_part1$Rel_Diff_biom <- ((mature_biomass_ref_part1$Biom_sim - Biomass_mature_ref_ag_years_final)/Biomass_mature_ref_ag_years_final)*100
+
+```
+
+## Prepare the data frame
+
+```{r prep.mature}
+
+mature_biomass_ref_part2 <- mature_biomass_ref_part1[,c("YEAR","Scenarios","Rel_Diff_biom")]
+
+mature_biomass_ref_part2$Scenarios <- as.factor(as.numeric(mature_biomass_ref_part2$Scenarios))
+
+mature_biomass_ref_part2 <- merge(mature_biomass_ref_part2,table_Sce_6.4,by=c("Scenarios"))
+
+mature_biomass_ref_part2$SceName <- factor(mature_biomass_ref_part2$SceName, levels = table_Sce_6.4$SceName)
+
+```
+
+## Create groups by scenario type
+
+The original study investigates 28 scenario measures and 504 combinations. But we simplify this here for the international audience.
+
+```{r mature.group.scen}
+
+dim(mature_biomass_ref_part2)
+Scenario_type <- seq(1:280)
+mature_biomass_ref_part2 <- cbind(mature_biomass_ref_part2, Scenario_type)
+# View(mature_biomass_ref_part2)
+
+mature_biomass_ref_part2$Scenario_type <- 
+  replace(mature_biomass_ref_part2$Scenario_type,c(1:10),"StatusQuo")
+
+mature_biomass_ref_part2$Scenario_type <- 
+  replace(mature_biomass_ref_part2$Scenario_type,c(11:20,121:130,211:230),"All-at-once Trawler Effort Reduction")
+
+mature_biomass_ref_part2$Scenario_type <- 
+  replace(mature_biomass_ref_part2$Scenario_type,c(251:280),"All-at-once Effort Reduction Applied to All Gears")
+
+mature_biomass_ref_part2$Scenario_type <- 
+  replace(mature_biomass_ref_part2$Scenario_type,c(221:250),"Gradual Trawler Effort Reduction")
+
+mature_biomass_ref_part2$Scenario_type <- 
+  replace(mature_biomass_ref_part2$Scenario_type,c(21:50),"Gradual Effort Reduction Applied to All Gears")
+
+mature_biomass_ref_part2$Scenario_type <- 
+  replace(mature_biomass_ref_part2$Scenario_type,c(61:70,81:90,101:110),"Seasonal Spatial Closure Single Effects")
+
+mature_biomass_ref_part2$Scenario_type <- 
+  replace(mature_biomass_ref_part2$Scenario_type,c(51:60,71:80,91:100,111:120),"Annual Spatial Closure Single Effects")
+
+mature_biomass_ref_part2$Scenario_type <- 
+  replace(mature_biomass_ref_part2$Scenario_type,c(131:150),"With 90-100m Isobaths Spatial Closure Combined Effects")
+
+mature_biomass_ref_part2$Scenario_type <- 
+  replace(mature_biomass_ref_part2$Scenario_type,c(171:190),"Without 90-100m Isobaths Spatial Closure Combined Effects")
+
+mature_biomass_ref_part2$Scenario_type <- 
+  replace(mature_biomass_ref_part2$Scenario_type,c(151:170),"Spatial Closure and Effort Reduction Combined Effects With the 90-100m Isobaths Closure")
+
+mature_biomass_ref_part2$Scenario_type <- 
+  replace(mature_biomass_ref_part2$Scenario_type,c(191:210),"Spatial Closure and Effort Reduction Combined Effects Without the 90-100m Isobaths Closure")
+
+mature_biomass_ref_part2.df <- as.data.frame(mature_biomass_ref_part2)
+mature_biomass_ref_part2.df$Scenario_type <- as.factor(mature_biomass_ref_part2.df$Scenario_type)
+
+```
+
+## Reorder the groups that we are interested in
+
+```{r mature.reorder}
+
+mature_biomass_ref_part2.df_reorder <- 
+  mature_biomass_ref_part2.df %>% mutate(
+    SceName_short = 
+      recode_factor(SceName,
+                  "StatusQuo"= "a",
+                  "Trawler_30_Red"= "b",
+                  "AllGears_30_Red" = "c",
+                  "Trawler_40_Red" = "d",
+                  "AllGears_40_Red"= "e",
+                  "Trawler_50_Red"= "f",
+                  "AllGears_50_Red"= "g",
+                  "Trawler_10_20_30"= "h",
+                  "AllGears_10_20_30"= "i",
+                  "Trawler_10_17.5_25_32.5_40"= "j",
+                  "AllGears_10_17.5_25_32.5_40"= "k",
+                  "Trawler_10_20_30_40_50"= "l",
+                  "AllGears_10_20_30_40_50"= "m",
+                  "Original_FRA_allYear"= "n",
+                  "Northward_Expansion_of_FRA_Season"= "o",
+                  "Northward_Expansion_of_FRA_allYear" = "p",
+                  "90-100_Isobaths_Closure_Season"= "q",
+                  "90-100_Isobaths_Closure_allYear"= "r", 
+                  "Offshore_Closures_Season"= "s",
+                  "Offshore_Closures_allYear"= "t",
+                  "Northward_Expansion_of_FRA_90-100m_Offshore_Closures_Combined"= "u",
+                  "Northward_Expansion_of_FRA_Offshore_Closures_Combined" = "v",
+                  "Northward_Expansion_of_FRA_90-100m_Offshore_allYear_Closures_Combined" = "w",
+                  "Northward_Expansion_of_FRA_Offshore_allYear_Closures_Combined" = "x",
+                  "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures"= "y",
+                  "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures"= "z",
+                  "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures_allGears"= "aa",
+                  "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures_allGears"= "bb"
+                ))
+
+```
+
+# Join together the two grouped age class categories and plot
+
+```{r merge.maturity.stage}
+
+mature_biomass_ref_part2.df_reorder$GROUP <- "mature"
+juvenile_biomass_ref_part2.df_reorder$GROUP <- "Juveniles"
+
+full_biomass_ref_by_grouped_age <- rbind(mature_biomass_ref_part2.df_reorder, juvenile_biomass_ref_part2.df_reorder)
+
+```
+
+## Save output
+
+```{r save.outputs.maturity.stage}
+
+fwrite(full_biomass_ref_by_grouped_age, file=paste(path, "Data/global.biomass.per.maturity.year.csv", sep=""), sep=";")
+
+```
+
+## Creat plots by maturity and year
+
+Following the fifth years of implementation:
+
+```{r year5.maturity.stage}
+
+Grouped_biomass.plot <- ggplot(data=full_biomass_ref_by_grouped_age[full_biomass_ref_by_grouped_age$YEAR==2024,])+
+  aes(x=SceName_short,y= Rel_Diff_biom,fill=Scenario_type)+ 
+  geom_bar(stat="identity",position=position_dodge())+
+  facet_grid(GROUP~.,scales="free")+
+  geom_hline(data=full_biomass_ref_by_grouped_age %>% filter(Scenario_type=="StatusQuo"&YEAR==2024), aes(yintercept= Rel_Diff_biom), colour="black",linewidth=0.75,linetype="dashed")+
+  scale_fill_manual(values=c_rel_diff,breaks=breaks_list,labels=str_wrap(breaks_list,25))+
+  labs(fill = " ")+
+  xlab("Scenario Code")+
+  ylab("Percent Change in Biomass from Reference Period")+
+  geom_hline(yintercept=0)+
+  theme_bw() +
+  bar_chart_text_theme+
+  bar_chart_legend_theme+
+  guides(fill = guide_legend(byrow = TRUE))
+
+Grouped_biomass.plot
+
+```
+
+Following the first year of implementation:
+
+```{r year1.maturity.stage}
+
+Grouped_biomass.plot2 <- ggplot(data=full_biomass_ref_by_grouped_age[full_biomass_ref_by_grouped_age$YEAR==2021,])+
+  aes(x=SceName_short,y= Rel_Diff_biom,fill=Scenario_type)+ 
+  geom_bar(stat="identity",position=position_dodge())+
+  facet_grid(GROUP~.,scales="free")+
+  geom_hline(data=full_biomass_ref_by_grouped_age %>% filter(Scenario_type=="StatusQuo"&YEAR==2021), aes(yintercept= Rel_Diff_biom), colour="black",linewidth=0.75,linetype="dashed")+
+  scale_fill_manual(values=c_rel_diff,breaks=breaks_list,labels=str_wrap(breaks_list,25))+
+  labs(fill = " ")+
+  xlab("Scenario Code")+
+  ylab("Percent Change in Biomass from Reference Period")+
+  geom_hline(yintercept=0)+
+  theme_bw() +
+  bar_chart_text_theme+
+  bar_chart_legend_theme+
+  guides(fill = guide_legend(byrow = TRUE))
+
+Grouped_biomass.plot2
+
+```
+
+# Create panel figures
+
+These will be more useful for the paper. Note that the tagger needs to be added after the figures are made due to conflicts.
+
+## Install packages
+
+```{r set.up.pannels}
+
+list.of.packages2 <- c("prettyunits","htmlwidgets","checkmate","devtools")
+new.packages <- list.of.packages2[!(list.of.packages2 %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+
+tagger.package <- "tagger"
+new.tagger <- tagger.package[!(tagger.package %in% installed.packages()[,"Package"])]
+if(length(new.packages)) devtools::install_github("eliocamp/tagger")
+
+library(tagger) #For tag_facet
+
+```
+
+## Create custom themes
+
+```{r custom.theme2}
+
+panel_bar_chart_text_theme1 <- theme(axis.title.x = element_blank(), axis.ticks.x = element_blank(), axis.text.x.bottom = element_blank(), axis.text.y = element_text(margin=margin(t=0,r=0,b=0,l=0), size = 12), axis.title.y = element_text(size = 14), strip.text = element_text(size=12), panel.spacing = unit(0.35, "cm"), tagger.panel.tag.text = element_text(color = "black", size = 14, family = "bold"), plot.margin = unit(c(0.2,0.2,0.2,0.2),"cm"))
+
+panel_bar_chart_text_theme2 <- theme(axis.title.x = element_text(margin=margin(t=5,r=0,b=0,l=0), size = 14), axis.text.y = element_text(margin=margin(t=0,r=0,b=0,l=0), size = 12), axis.text.x.bottom = element_text(margin=margin(t=0,r=0,b=0,l=0), size = 12), axis.title.y = element_text(size = 14), strip.text = element_blank(), panel.spacing = unit(0.35, "cm"), tagger.panel.tag.text = element_text(color = "black", size = 14, family = "bold"), plot.margin = unit(c(0.2,0.2,0.2,0.2),"cm"))
+
+```
+
+## For total annual biomass panel (not included in publication)
+
+```{r global.biomass.panel}
+
+xplot1 <- biomass_year_ref_part2.df_reorder_plot2
+yplot1 <- biomass_year_ref_part2.df_reorder_plot
+
+TotalBiomass <- ggarrange(xplot1 +
+                                 tag_facets(tag = "panel", tag_pool= "Year 1",
+                                            tag_prefix = "",
+                                            tag_suffix = "",
+                                            tag_sep = ".") +
+                                 rremove("ylab"),
+                               yplot1 +
+                                 tag_facets(tag = "panel", tag_pool= "Year 5",
+                                            tag_prefix = "",
+                                            tag_suffix = "",
+                                            tag_sep = ".") +
+                                 rremove("ylab"),
+                               ncol=2,nrow=1,align="hv",
+                               widths=c(1,1),heights=c(1,1),
+                               common.legend=TRUE,legend="bottom",hjust=0, vjust=-0.25)
+ 
+TotalBiomass <- annotate_figure(TotalBiomass,
+                                     left=text_grob("Percent Change in Biomass from Reference Period",color="black",rot=90,size=14))
+ 
+TotalBiomass
+
+ggsave2(filename="TotalBiomass.pdf",plot=TotalBiomass, device="pdf", path=paste(path,"Figures",sep=""), dpi=1200, width = 29.7, height = 21, unit="cm", limitsize = FALSE)
+
+```
+
+## For annual biomass by age panel (not included in publication)
+
+```{r biomass.age.pannel}
+
+xplot2 <- biomass_year_age_ref_part2.df_reorder_plot2
+yplot2 <- biomass_year_age_ref_part2.df_reorder_plot
+
+Biomass_byAge <- ggarrange(xplot2 +
+                                  tag_facets(tag = "panel", tag_pool= c("Year 1", "Year 1", "Year 1", "Year 1", "Year 1", "Year 1"),
+                                             tag_prefix = "",
+                                             tag_suffix = "",
+                                             tag_sep = ".") +
+                                  rremove("ylab"),
+                                yplot2 +
+                                  tag_facets(tag = "panel",
+                                             tag_pool= c("Year 5", "Year 5", "Year 5", "Year 5", "Year 5", "Year 5"),
+                                             tag_prefix = "",
+                                             tag_suffix = "",
+                                             tag_sep = ".") +
+                                  rremove("ylab"),
+                                ncol=2,nrow=1,align="hv",
+                                widths=c(1,1),heights=c(1,1),
+                                common.legend=TRUE,legend="bottom",hjust=0, vjust=-0.25)
+
+Biomass_byAge <- annotate_figure(Biomass_byAge,
+                                 left=text_grob("Percent Change in Biomass from Reference Period",color="black",rot=90,size=14))
+
+ggsave2(filename="Biomass_byAge.pdf",plot=Biomass_byAge, device="pdf", path=paste(path,"Figures",sep=""), dpi=1200, width = 29.7, height = 42, unit="cm", limitsize = FALSE)
+
+```
+
+## For annual biomass by maturity stage panel (not included in publication)
+
+```{r biomass.maturity.stage.panel}
+
+xplot3 <- Grouped_biomass.plot2
+yplot3 <- Grouped_biomass.plot
+
+Grouped_biomass <- ggarrange(xplot3 +
+                               tag_facets(tag = "panel", tag_pool= c("Year 1", "Year 5"),
+                                          tag_prefix = "",
+                                          tag_suffix = "",
+                                          tag_sep = ".") +
+                               rremove("ylab"),
+                             yplot3 +
+                               tag_facets(tag = "panel",
+                                          tag_pool= c("Year 1", "Year 5"),
+                                          tag_prefix = "",
+                                          tag_suffix = "",
+                                          tag_sep = ".") +
+                               rremove("ylab"),
+                             ncol=2,nrow=1,align="hv",
+                             widths=c(1,1),heights=c(1,1),
+                             common.legend=TRUE,legend="bottom",hjust=0, vjust=-0.25)
+
+Grouped_biomass <- annotate_figure(Grouped_biomass,
+                                     left=text_grob("Percent Change in Biomass from Reference Period",color="black",rot=90,size=14))
+
+ggsave2(filename="Grouped_biomass.pdf",plot=Grouped_biomass, device="pdf", path=paste(path,"Figures",sep=""), dpi=1200, width = 29.7, height = 21, unit="cm", limitsize = FALSE)
+
+```
+
+## Exact numbers of relative change 
+
+Here we apply basic computations to highlight main points in the results section.
+
+```{r exact.vals.comp.1}
+
+year1_percent <- biomass_year_ref_part2.df_reorder %>%
+  filter(YEAR==2021)
+
+StatusQuoval.yr1 <- year1_percent %>%
+  filter(Scenarios == 0)
+
+year1_percent$diffStatusQuo <- ((year1_percent$Rel_Diff_biom - StatusQuoval.yr1$Rel_Diff_biom)/StatusQuoval.yr1$Rel_Diff_biom)*100
+
+year1_percent.allatonce <- year1_percent %>%
+  filter(SceName_short %in% c("b","c", "d","e","f","g"))
+
+range(year1_percent.allatonce$diffStatusQuo)
+
+```
+
+```{r exact.vals.comp.2}
+
+year5_percent <- biomass_year_ref_part2.df_reorder %>%
+  filter(YEAR==2024)
+
+StatusQuoval.yr5 <- year5_percent %>%
+  filter(Scenarios == 0)
+
+year5_percent$diffStatusQuo <- ((year5_percent$Rel_Diff_biom - StatusQuoval.yr5$Rel_Diff_biom)/StatusQuoval.yr5$Rel_Diff_biom)*100
+
+year5_percentallatonce <- year5_percent %>%
+  filter(SceName_short %in% c("b","c", "d","e","f","g"))
+
+range(year5_percentallatonce$diffStatusQuo)
+
+```
+

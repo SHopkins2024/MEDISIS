@@ -1,0 +1,362 @@
+---
+title: "MEDISIS Data Formation"
+author: "Stephanie Hopkins"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document:
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+
+rm(list = ls())
+gc()
+
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(message = FALSE)
+
+list.of.packages <- c("data.table","tidyverse")
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+
+library(data.table)
+library(tidyverse)
+
+# Select true (T) or false (F)
+catchWgtot_6.4_without0s <- T
+catchWgtot_6.4_Only0s_chunk1 <- T
+catchWgtot_6.4_Only0s_chunk2 <- T
+catchWgtot_6.4_Only0s_chunk3 <- T
+catchWgtot_6.4_Only0s_chunk4 <- T
+EffNomtot_6.4_without0s <- T
+EffNomtot_6.4_Only0s <- T 
+biomtot_6.4 <- T
+
+# To Replace with your file directory
+dir <- "C:/Users/steph/Documents/"
+
+# Folder path in directory to save outputs
+nameRData_6.4 <- 'MEDISIS/Part2.Analysing.the.simulation.output/Data/'  
+
+# Full path to ISIS-Fish simulation outputs (note the folder name will be the simulation name specified in the ISIS-Fish terminal, the data in YYmmdd format, and the time in hh:mm format)
+simFolder_6.4 <- paste(dir,"/isis-fish-4/isis-database/simulations/sim_MEDISIS_2024-02-15-09-55/",sep="")
+
+# The simulation name needed without simulation number
+pattern_6.4 <- "sim_MEDISIS_2024-02-15-09-55"
+
+simPath_6.4 <- list.files(simFolder_6.4, pattern = pattern_6.4)
+simPath_6.4
+
+nb_simus <- length(simPath_6.4)
+nb_simus
+
+```
+
+The code has been modified to exclude the mixedsort() function, though the outputs are correct when used, mixedsort() is not a preferred method since it can easily change the order. Under the new method, and partly due to additional variables, there is a data size issue. To help elevate this problem, only nominal effort, biomass begin month, and catch weight were used. Applying the gear and country variables were left out because metier were conserved. 
+ 
+To try and account for catch weight by metier and strategy, as well as effort by metier and strategy, the sum by sections have been modified. For the unnecessary data, they have been removed as a means to combat space. The function group_by() also consumes too much RAM, so aggregate was used instead. Instead of using save.image, a separate RData file was created per interested variable.
+
+To begin first move all the simulations into the empty folder with the simulation name. So for example if my simulation name is "sim_MEDISIS_2024-02-15-09-55", I would move all the subsequent simulation steps (e.g., "sim_MEDISIS_2024-02-15-09-55_0") into this folder. After this, run the steps below.
+
+# For catch weight
+
+This code removes the zero value that should have been dropped from the exportResults files in the ISIS-Fish database.
+
+```{r catch_weight_nonZeros, echo=TRUE}
+
+if(catchWgtot_6.4_without0s == F){
+
+# lire les simus et les stocker dans des listes 
+# *read the simulations and store them in lists*
+for(s in (1:nb_simus)){
+  print(s)
+  
+    catchWg_6.4 <- fread(paste(simFolder_6.4, simPath_6.4[s], '/resultExports/CapturesPoidsStrategies.csv', sep=''), h = T, sep = ';', dec = '.')
+    
+    # Note that you may need to update the position of the simulation number
+    s36000 <- as.numeric(strsplit(simPath_6.4[s], "_")[[1]][4])
+    print(s36000)
+
+    catchWg_6.4 <- subset(catchWg_6.4, value != 0) %>%
+      mutate(simu = as.numeric(as.character(paste(s36000))))
+    
+        if(s == 1){
+          catchWgtot_6.4 <- catchWg_6.4
+          
+        }else{
+          catchWgtot_6.4 <- rbind(catchWgtot_6.4, catchWg_6.4)
+        }
+    
+      rm(s, catchWg_6.4)
+      
+      fwrite(catchWgtot_6.4, file = paste(dir, nameRData_6.4, 'catchWgtot_6.4_without-0s.csv', sep = ''), sep = ";", compress = "none")
+  
+  }
+}
+
+```
+
+This is to compare only the catch weight values where zero is present (part 1 of 4)
+
+```{r catch_weight_zeros_chunk1, echo=TRUE}
+
+nb_simus_chunk1 <- simPath_6.4[1:135]
+
+if(catchWgtot_6.4_Only0s_chunk1 == F){
+  
+# lire les simus et les stocker dans des listes 
+# *read the simulations and store them in lists*
+for(s in (1:length(nb_simus_chunk1))){
+  print(s)
+  
+    catchWg_6.4 <- fread(paste(simFolder_6.4, nb_simus_chunk1[s], '/resultExports/CapturesPoidsStrategies.csv', sep=''), h = T, sep = ';', dec = '.')
+    
+    s36000 <- as.numeric(strsplit(nb_simus_chunk1[s], "_")[[1]][4])
+    print(s36000)
+
+    catchWg_6.4 <- subset(catchWg_6.4, value == 0) %>%
+      mutate(simu = as.numeric(as.character(paste(s36000))))
+    
+        if(s == 1){
+          catchWgtot_6.4 <- catchWg_6.4
+          
+        }else{
+          catchWgtot_6.4 <- rbind(catchWgtot_6.4, catchWg_6.4)
+        }
+     
+     rm(s, catchWg_6.4)
+     
+      fwrite(catchWgtot_6.4, file = paste(dir, nameRData_6.4, 'catchWgtot_6.4-0s_only_chunk1.csv', sep = ''), sep = ";", compress = "none")
+  
+  }
+}
+
+```
+
+This is to compare only the catch weight values where zero is present (part 2 of 4)
+
+```{r catch_weight_zeros_chunk2, echo=TRUE}
+
+rm(catchWgtot_6.4)
+gc()
+
+nb_simus_chunk2 <- simPath_6.4[136:270]
+
+if(catchWgtot_6.4_Only0s_chunk2 == F){
+  
+# lire les simus et les stocker dans des listes 
+# *read the simulations and store them in lists*
+for(s in (1:length(nb_simus_chunk2))){
+  print(s)
+  
+    catchWg_6.4 <- fread(paste(simFolder_6.4, nb_simus_chunk2[s], '/resultExports/CapturesPoidsStrategies.csv', sep=''), h = T, sep = ';', dec = '.')
+    
+    s36000 <- as.numeric(strsplit(nb_simus_chunk2[s], "_")[[1]][4])
+    print(s36000)
+
+    catchWg_6.4 <- subset(catchWg_6.4, value == 0) %>%
+      mutate(simu = as.numeric(as.character(paste(s36000))))
+    
+        if(s == 1){
+          catchWgtot_6.4 <- catchWg_6.4
+          
+        }else{
+          catchWgtot_6.4 <- rbind(catchWgtot_6.4, catchWg_6.4)
+        }
+     
+     rm(s, catchWg_6.4)
+     
+      fwrite(catchWgtot_6.4, file = paste(dir, nameRData_6.4, 'catchWgtot_6.4-0s_only_chunk2.csv', sep = ''), sep = ";", compress = "none")
+  
+  }
+}
+
+```
+
+This is to compare only the catch weight values where zero is present (part 3 of 4)
+
+```{r catch_weight_zeros_chunk3, echo=TRUE}
+
+rm(catchWgtot_6.4)
+gc()
+
+nb_simus_chunk3 <- simPath_6.4[271:405]
+
+if(catchWgtot_6.4_Only0s_chunk3 == F){
+  
+# lire les simus et les stocker dans des listes 
+# *read the simulations and store them in lists*
+for(s in (1:length(nb_simus_chunk3))){
+  print(s)
+  
+    catchWg_6.4 <- fread(paste(simFolder_6.4, nb_simus_chunk3[s], '/resultExports/CapturesPoidsStrategies.csv', sep=''), h = T, sep = ';', dec = '.')
+    
+    s36000 <- as.numeric(strsplit(nb_simus_chunk3[s], "_")[[1]][4])
+    print(s36000)
+
+    catchWg_6.4 <- subset(catchWg_6.4, value == 0) %>%
+      mutate(simu = as.numeric(as.character(paste(s36000))))
+    
+        if(s == 1){
+          catchWgtot_6.4 <- catchWg_6.4
+          
+        }else{
+          catchWgtot_6.4 <- rbind(catchWgtot_6.4, catchWg_6.4)
+        }
+     
+     rm(s, catchWg_6.4)
+     
+      fwrite(catchWgtot_6.4, file = paste(dir, nameRData_6.4, 'catchWgtot_6.4-0s_only_chunk3.csv', sep = ''), sep = ";", compress = "none")
+  
+  }
+}
+
+```
+
+This is to compare only the catch weight values where zero is present (part 4 of 4)
+
+```{r catch_weight_zeros_chunk4, echo=TRUE}
+
+rm(catchWgtot_6.4)
+gc()
+
+nb_simus_chunk4 <- simPath_6.4[406:504]
+
+if(catchWgtot_6.4_Only0s_chunk4 == F){
+  
+# lire les simus et les stocker dans des listes 
+# *read the simulations and store them in lists*
+for(s in (1:length(nb_simus_chunk4))){
+  print(s)
+  
+    catchWg_6.4 <- fread(paste(simFolder_6.4, nb_simus_chunk4[s], '/resultExports/CapturesPoidsStrategies.csv', sep=''), h = T, sep = ';', dec = '.')
+    
+    s36000 <- as.numeric(strsplit(nb_simus_chunk4[s], "_")[[1]][4])
+    print(s36000)
+
+    catchWg_6.4 <- subset(catchWg_6.4, value == 0) %>%
+      mutate(simu = as.numeric(as.character(paste(s36000))))
+    
+        if(s == 1){
+          catchWgtot_6.4 <- catchWg_6.4
+          
+        }else{
+          catchWgtot_6.4 <- rbind(catchWgtot_6.4, catchWg_6.4)
+        }
+     
+     rm(s, catchWg_6.4)
+     
+      fwrite(catchWgtot_6.4, file = paste(dir, nameRData_6.4, 'catchWgtot_6.4-0s_only_chunk4.csv', sep = ''), sep = ";", compress = "none")
+  
+  }
+}
+
+```
+
+# For effort
+
+This code removes the zero values that should have been dropped from the exportResults files
+
+```{r nominal_effort_nonZeros, echo=TRUE}
+
+if(EffNomtot_6.4_without0s == F){
+
+# lire les simus et les stocker dans des listes 
+# *read the simulations and store them in lists*
+for(s in (1:nb_simus)){
+  print(s)
+  
+    EffNom_6.4 <- fread(paste(simFolder_6.4, simPath_6.4[s], '/resultExports/EffortsNominalMetiers.csv', sep=''), h = T, sep = ';', dec = '.')
+    
+    s36000 <- as.numeric(strsplit(simPath_6.4[s],"_")[[1]][4])
+    print(s36000)
+
+    EffNom_6.4 <- subset(EffNom_6.4, value != 0) %>%
+      mutate(simu = as.numeric(as.character(paste(s36000))))
+
+        if(s == 1){
+          EffNomtot_6.4 <- EffNom_6.4
+          
+        }else{
+          EffNomtot_6.4 <- rbind(EffNomtot_6.4, EffNom_6.4)
+        }
+    
+      rm(s, EffNom_6.4)
+
+      fwrite(EffNomtot_6.4, file = paste(dir, nameRData_6.4, 'EffNomtot_6.4_without-0s.csv', sep = ''), sep = ";", compress = "none")
+  
+  }
+}
+
+```
+
+This is to compare only the effort values where zero is present 
+
+```{r nominal_effort_zeros, echo=TRUE}
+
+if(EffNomtot_6.4_Only0s == F){
+  
+# lire les simus et les stocker dans des listes 
+# *read the simulations and store them in lists*
+for(s in (1:nb_simus)){
+  print(s)
+  
+    EffNom_6.4 <- fread(paste(simFolder_6.4, simPath_6.4[s], '/resultExports/EffortsNominalMetiers.csv', sep=''), h = T, sep = ';', dec = '.')
+    
+    s36000 <- as.numeric(strsplit(simPath_6.4[s], "_")[[1]][4])
+    print(s36000)
+
+    EffNom_6.4 <- subset(EffNom_6.4, value == 0) %>%
+      mutate(simu = as.numeric(as.character(paste(s36000))))
+    
+        if(s == 1){
+          EffNomtot_6.4 <- EffNom_6.4
+          
+        }else{
+          EffNomtot_6.4 <- rbind(EffNomtot_6.4, EffNom_6.4)
+        }
+    
+      rm(s, EffNom_6.4)
+      
+      fwrite(EffNomtot_6.4, file = paste(dir, nameRData_6.4, 'EffNomtot_6.4-0s_only.csv', sep = ''), sep = ";", compress = "none")
+  
+  }
+}
+
+```
+
+# For biomass
+
+No further treatment of zeros is necessary for biomass.
+
+```{r biomass, echo=TRUE}
+
+if(biomtot_6.4 == F){
+
+# lire les simus et les stocker dans des listes
+# *read the simulations and store them in lists*
+for(s in (1:nb_simus)){
+  print(s)
+  
+    biom_6.4 <- fread(paste(simFolder_6.4, simPath_6.4[s], '/resultExports/BiomasseBeginMonth.csv', sep = ''), h = T, sep = ';', dec = '.')
+    
+   s36000 <- as.numeric(strsplit(simPath_6.4[s], "_")[[1]][4])
+   print(s36000)
+
+    biom_6.4 <- biom_6.4 %>%
+      mutate(simu = as.numeric(as.character(paste(s36000))))
+
+        if(s == 1){
+          biomtot_6.4 <- biom_6.4
+          
+        }else{
+          biomtot_6.4 <- rbind(biomtot_6.4, biom_6.4)
+        }
+    
+      rm(s, biom_6.4)
+      
+      fwrite(biomtot_6.4, file = paste(dir, nameRData_6.4, 'biomtot_6.4.csv', sep = ''), sep = ";", compress = "none")
+  }
+}
+
+```

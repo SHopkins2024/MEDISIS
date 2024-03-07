@@ -1,0 +1,1135 @@
+---
+title: "MEDISIS Catch Weight Global"
+author: "Stephanie Hopkins"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    toc: yes
+---
+
+```{r setup, include=FALSE, fig.width=6, fig.height=6}
+
+rm(list = ls())
+gc()
+
+knitr::opts_chunk$set(echo=TRUE, message=FALSE, results = "hide")
+
+list.of.packages <- c("data.table","tidyverse","cowplot","ggpubr")
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+
+library(data.table)
+library(tidyverse)
+library(cowplot)
+library(ggpubr)
+
+# To Replace with your file directory
+dir <- "C:/Users/steph/Documents"
+
+MEDISIS <- "/MEDISIS/Part2.Analysing.the.simulation.output/"
+
+path <- paste(dir,MEDISIS,sep="")
+
+```
+
+# Make your life easy and save custom themes
+
+```{r custom.theme}
+
+bar_chart_text_theme <- theme(axis.title.x = element_text(margin=margin(t=5,r=0,b=0,l=0), size = 14), axis.text.y = element_text(margin=margin(t=0,r=1,b=0,l=0), size = 12), axis.text.x.bottom = element_text(margin=margin(t=1,r=0,b=0,l=0), size = 12), axis.title.y = element_text(size = 14), strip.text = element_text(size=12), panel.spacing = unit(0.5, "cm")) 
+
+bar_chart_legend_theme <- theme(legend.title = element_blank(), legend.text = element_text(size = 12),legend.text.align = 0, legend.direction = "horizontal", legend.spacing = unit(0.001, 'cm'), legend.key.height = unit(1.52, 'cm'), legend.key.width = unit(1.5, 'cm'), legend.position="bottom")
+
+```
+
+# Create a custom colour palette
+
+Now that we are satisfied with the groupings, create a custom colour palette that matches colours with the: 2nd and 4th 3rd and 5th 7th and 8th 9th and 10th values.
+
+```{r colour.palette}
+
+c_rel_diff <- c("#000000", #BLACK
+                "#0492C2", #CERULEAN
+                "#78C0f0", #SKY
+                "#008081", #TEAL
+                "#4F97A3", #TURKISH BLUE
+                "#CC9966", #TAN
+                "#a67556", #Brown
+                "#3DED97", #SEAFOAM
+                "#99EDC3", #MINT
+                "#32612D", #BASIL
+                "#597D35" #PICKLE
+) 
+
+#pie(rep(1, 11), col = c_rel_diff)
+
+```
+
+# Adjust the plot order
+
+```{r break.list}
+
+breaks_list <- c(
+  "StatusQuo",
+  "All-at-once Trawler Effort Reduction",
+  "All-at-once Effort Reduction Applied to All Gears",
+  "Gradual Trawler Effort Reduction",
+  "Gradual Effort Reduction Applied to All Gears",
+  "Seasonal Spatial Closure Single Effects",
+  "Annual Spatial Closure Single Effects",
+  "With 90-100m Isobaths Spatial Closure Combined Effects",
+  "Without 90-100m Isobaths Spatial Closure Combined Effects",
+  "Spatial Closure and Effort Reduction Combined Effects With the 90-100m Isobaths Closure",
+  "Spatial Closure and Effort Reduction Combined Effects Without the 90-100m Isobaths Closure")
+
+```
+
+# Load only catch weight
+
+```{r catch.weight}
+
+# 15706980 entries
+name_RData_6.4 <- 'catchWgtot_6.4_without-0s'
+
+catchWgtot_6.4 <- fread(paste(path, "Data/", name_RData_6.4,'.csv',sep=''))
+
+dim(catchWgtot_6.4)
+# [1] 14724396  8
+
+nameRDATA_clean <- 'catchWgtot_6.4_true_0s'
+
+catchWgtot_6.4_matched <-fread(paste(path, "Data/", nameRDATA_clean,'.csv',sep=''))
+
+dim(catchWgtot_6.4_matched)
+# [1] 9951444 8
+
+catchWgtot_6.4 <- rbind(catchWgtot_6.4, catchWgtot_6.4_matched)
+
+rm(catchWgtot_6.4_matched)
+
+```
+
+# Join the simulation design table to the simulation output
+
+Apply the names of the Scenarios in the column designating their numeric values and graft this to the Data.
+
+```{r simulation.bind}
+
+simuDesign <- '/MEDISIS/Part1.Reproducing.the.simulation.data/ISIS.Fish.Input.Tables/simulation_design_28'
+
+simulationDesign <- fread(paste(dir, simuDesign,".csv", sep=""), sep=';', h=F)
+
+colnames(simulationDesign) =  c('InitialAbundance','Recruitment','Connectivity','Scenarios')
+
+simulationDesign$simu <- seq(0, 503, 1)
+
+step <- unique(catchWgtot_6.4$step)
+nbYear <- length(step)/12 
+YEAR <- sort(rep(seq(2015,2014+nbYear,1), 12))
+MONTH <- rep(seq(1,12,1),nbYear)
+tabStep <- data.frame(step, YEAR, MONTH)
+
+catchWgtot_6.4 <- inner_join(catchWgtot_6.4, tabStep, by=c('step'))
+catchWgtot_6.4 <- inner_join(catchWgtot_6.4, simulationDesign, by=c('simu'))
+
+table_Sce_6.4 <- data.frame(Scenarios=as.character(c(0:27)),SceName=c("StatusQuo","Trawler_30_Red","Trawler_40_Red","Trawler_50_Red","Trawler_10_20_30","Trawler_10_17.5_25_32.5_40","Trawler_10_20_30_40_50","AllGears_30_Red","AllGears_40_Red","AllGears_50_Red","AllGears_10_20_30","AllGears_10_17.5_25_32.5_40","AllGears_10_20_30_40_50","Original_FRA_allYear","Northward_Expansion_of_FRA_Season","Northward_Expansion_of_FRA_allYear","90-100_Isobaths_Closure_Season","90-100_Isobaths_Closure_allYear","Offshore_Closures_Season","Offshore_Closures_allYear","Northward_Expansion_of_FRA_90-100m_Offshore_Closures_Combined","Northward_Expansion_of_FRA_90-100m_Offshore_allYear_Closures_Combined","Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures","Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures_allGears","Northward_Expansion_of_FRA_Offshore_Closures_Combined","Northward_Expansion_of_FRA_Offshore_allYear_Closures_Combined","Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures","Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures_allGears"))
+
+```
+
+# Filter data
+
+Note that while we parameterise OTB_XST_18-24 and OTM_CMT_18-24 in ISIS-Fish, these are not active metier or they do not target hake.
+
+```{r drop.inactive.metier}
+
+test.met <- subset(catchWgtot_6.4, metier %in% c("OTB_XST_18-24","OTM_CMT_18-24"))
+
+catchWgtot_6.4 <- subset(catchWgtot_6.4, !metier %in% c("OTB_XST_18-24","OTM_CMT_18-24"))
+
+dim(catchWgtot_6.4)
+# 23224320  14
+
+```
+
+# Combine all values into a single data table
+
+This part is broken into several smaller steps, but essentially we want to merge observation data and simplify the catch data. Calculate the total catch size and aggregate.
+
+```{r catch.table}
+
+# For Global Catch Weight:
+catch_year_group <- setNames(aggregate(value~YEAR+group+simu+InitialAbundance+Recruitment+Connectivity+Scenarios,data=catchWgtot_6.4,sum),c("YEAR","GROUP","simu","InitialAbundance","Recruitment","Connectivity","Scenarios","Catch_wg"))
+
+catch_check1 <- subset(catch_year_group, InitialAbundance == 0 & Recruitment == 0 & Connectivity == 0 & Scenarios == 16 & YEAR %in% c(2020, 2024))
+
+catch_check1.1 <- aggregate(Catch_wg ~ YEAR, data = catch_check1, FUN = sum)
+
+dim(catch_check1.1)
+# [1] 2 2
+
+```
+
+# Reference simulation
+
+Recall the the management scenarios are implemented in December of 2019... Under the management scenarios juvenile catch should have gone down 20% from the average of the reference period via spatial closures and visible following one year.
+
+```{r key.binding}
+
+catch_year_group$CombiSimu <- paste0("Init",catch_year_group$InitialAbundance,
+                                     "_Recr",catch_year_group$Recruitment,
+                                     "_Conn",catch_year_group$Connectivity,
+                                     "_Scen",catch_year_group$Scenarios)
+
+catch_Ref <- catch_year_group[catch_year_group$CombiSimu=="Init0_Recr0_Conn0_Scen0",]
+
+catch_Ref <- as.data.frame(catch_Ref[,c("YEAR","GROUP","Catch_wg")])
+
+names(catch_Ref)[3]<-"Catch_ref_wg"
+
+```
+
+# Isolate the reference scenario (StatusQuo with original params)
+
+Checking against the simulated results from the compiled data here and ISIS-Fish terminal, the same output is achieved. Here we choose StatusQuo scenario and the baseline assumptions for recruitment, initial abundance, or connectivity and we take the mean of 2015-2017 to compare against.
+
+```{r reference.scenario}
+
+catch_avec_ref <- left_join(catch_year_group,catch_Ref,by=c("YEAR","GROUP"))
+
+# select only of reference simulations (cad: Init=0, Rec=0, Conn=0)
+catch_avec_ref <- catch_avec_ref[(catch_avec_ref$InitialAbundance=="0" &
+                                    catch_avec_ref$Recruitment=="0" &
+                                    catch_avec_ref$Connectivity=="0"),]
+
+catch_avec_ref <- as.data.table(catch_avec_ref)
+
+```
+
+# Global catch weight and prep figures
+
+The code below first looks at the global catch weight and scenario trends after the first and fifth year of implemented.
+
+## Compute reference value
+
+```{r global.catch.ref}
+
+catch_year_ref_part1 <- catch_avec_ref[,list(Catch_sim_wg = sum(Catch_wg), Catch_ref_wg = sum(Catch_ref_wg)), by = list(YEAR, simu, InitialAbundance, Recruitment, Connectivity, Scenarios)]
+
+unique(is.na(catch_year_ref_part1))
+
+Catch_ref_aggregated <- subset(catch_avec_ref, Scenarios==0)
+
+Catch_ref_aggregated <- aggregate(Catch_ref_wg~YEAR,data = Catch_ref_aggregated,sum)
+
+Catch_ref_aggregated$YEAR <- as.character(Catch_ref_aggregated$YEAR)
+
+Catch_ref_years <-subset(Catch_ref_aggregated,YEAR<="2017")
+
+Catch_ref_years_final <- mean(Catch_ref_years$Catch_ref_wg)
+Catch_ref_years_final
+
+```
+
+## Compute the relative difference
+
+Keep StatusQuo for comparison purposes, but add horizontal dashed line from the relative different weight value.
+
+```{r rel.diff.global}
+
+# Calculate relative differences (in weight:  Rel_Diff_wg)
+catch_year_ref_part1$Rel_Diff_wg <- ((catch_year_ref_part1$Catch_sim_wg - Catch_ref_years_final)/Catch_ref_years_final)*100
+
+unique(is.na(catch_year_ref_part1))
+
+catch_year_ref_part1$Rel_Diff_wg
+
+```
+
+## Prepare the data frame
+
+Here we are interested in the global catch weight only, so while effort reduction is applied at the metier level, we are only looking at the general patterns at this stage.
+
+```{r global.prep}
+
+catch_year_ref_part2 <- catch_year_ref_part1[,c("YEAR","Scenarios","Rel_Diff_wg")]
+
+catch_year_ref_part2$Scenarios <- as.factor(as.numeric(catch_year_ref_part2$Scenarios))
+
+catch_year_ref_part2 <- merge(catch_year_ref_part2,table_Sce_6.4,by=c("Scenarios"))
+
+catch_year_ref_part2$SceName <- factor(catch_year_ref_part2$SceName, levels = table_Sce_6.4$SceName)
+
+dim(catch_year_ref_part2)
+# [1] 280  4
+
+```
+
+## Create groups by scenario type
+
+The original study investigates 28 scenario measures and 504 combinations. But we simplify this here for the international audience.
+
+```{r global.group.scen}
+
+Scenario_type <- seq(1:280)
+catch_year_ref_part2 <- cbind(catch_year_ref_part2, Scenario_type)
+# View(catch_year_ref_part2)
+
+catch_year_ref_part2$Scenario_type <- 
+  replace(catch_year_ref_part2$Scenario_type,1:10,"StatusQuo")
+
+catch_year_ref_part2$Scenario_type <- 
+  replace(catch_year_ref_part2$Scenario_type,c(11:20,121:130,211:220),"All-at-once Trawler Effort Reduction")
+
+catch_year_ref_part2$Scenario_type <- 
+  replace(catch_year_ref_part2$Scenario_type,251:280,"All-at-once Effort Reduction Applied to All Gears")
+
+catch_year_ref_part2$Scenario_type <- 
+  replace(catch_year_ref_part2$Scenario_type,221:250,"Gradual Trawler Effort Reduction")
+
+catch_year_ref_part2$Scenario_type <- 
+  replace(catch_year_ref_part2$Scenario_type,21:50,"Gradual Effort Reduction Applied to All Gears")
+
+catch_year_ref_part2$Scenario_type <- 
+  replace(catch_year_ref_part2$Scenario_type,c(61:70,81:90,101:110),"Seasonal Spatial Closure Single Effects")
+
+catch_year_ref_part2$Scenario_type <- 
+  replace(catch_year_ref_part2$Scenario_type,c(51:60,71:80,91:100,111:120),"Annual Spatial Closure Single Effects")
+
+catch_year_ref_part2$Scenario_type <- 
+  replace(catch_year_ref_part2$Scenario_type,131:150,"With 90-100m Isobaths Spatial Closure Combined Effects")
+
+catch_year_ref_part2$Scenario_type <- 
+  replace(catch_year_ref_part2$Scenario_type,171:190,"Without 90-100m Isobaths Spatial Closure Combined Effects")
+
+catch_year_ref_part2$Scenario_type <- 
+  replace(catch_year_ref_part2$Scenario_type,151:170,"Spatial Closure and Effort Reduction Combined Effects With the 90-100m Isobaths Closure")
+
+catch_year_ref_part2$Scenario_type <- 
+  replace(catch_year_ref_part2$Scenario_type,191:210,"Spatial Closure and Effort Reduction Combined Effects Without the 90-100m Isobaths Closure")
+
+catch_year_ref_part2.df <- as.data.frame(catch_year_ref_part2)
+
+catch_year_ref_part2.df$Scenario_type <- as.factor(catch_year_ref_part2.df$Scenario_type)
+
+```
+
+## Reorder the groups that we are interested in
+
+```{r global.reorder}
+
+catch_year_ref_part2.df_reorder <- 
+  catch_year_ref_part2.df %>% mutate(
+    SceName_short = 
+      recode_factor(SceName,
+                  "StatusQuo"= "a",
+                  "Trawler_30_Red"= "b",
+                  "AllGears_30_Red" = "c",
+                  "Trawler_40_Red" = "d",
+                  "AllGears_40_Red"= "e",
+                  "Trawler_50_Red"= "f",
+                  "AllGears_50_Red"= "g",
+                  "Trawler_10_20_30"= "h",
+                  "AllGears_10_20_30"= "i",
+                  "Trawler_10_17.5_25_32.5_40"= "j",
+                  "AllGears_10_17.5_25_32.5_40"= "k",
+                  "Trawler_10_20_30_40_50"= "l",
+                  "AllGears_10_20_30_40_50"= "m",
+                  "Original_FRA_allYear"= "n",
+                  "Northward_Expansion_of_FRA_Season"= "o",
+                  "Northward_Expansion_of_FRA_allYear" = "p",
+                  "90-100_Isobaths_Closure_Season"= "q",
+                  "90-100_Isobaths_Closure_allYear"= "r", 
+                  "Offshore_Closures_Season"= "s",
+                  "Offshore_Closures_allYear"= "t",
+                  "Northward_Expansion_of_FRA_90-100m_Offshore_Closures_Combined"= "u",
+                  "Northward_Expansion_of_FRA_Offshore_Closures_Combined" = "v",
+                  "Northward_Expansion_of_FRA_90-100m_Offshore_allYear_Closures_Combined" = "w",
+                  "Northward_Expansion_of_FRA_Offshore_allYear_Closures_Combined" = "x",
+                  "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures"= "y",
+                  "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures"= "z",
+                  "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures_allGears"= "aa",
+                  "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures_allGears"= "bb"
+                ))
+
+```
+
+## Save global catch output
+
+```{r save.global.output}
+
+fwrite(catch_year_ref_part2.df_reorder, file=paste(path, "Data/global.catch.weight.by.year.csv", sep=""), sep=";")
+
+```
+
+## Graphing the relative difference in catch weight
+
+The following code can be recycled throughout the paper and is intended to allow for easier comparison. Keep in mind that the default text size in ggplot2 is 11pt. We need to increase this.
+
+Following the fifth year of implementation:
+
+```{r year5.global}
+
+catch_year_ref_part2.df_reorder_plot <-
+  ggplot(data=catch_year_ref_part2.df_reorder[catch_year_ref_part2.df_reorder$YEAR==2024,])+
+  aes(x=SceName_short,y= Rel_Diff_wg,fill=Scenario_type)+ 
+  geom_bar(stat="identity")+ 
+  geom_hline(data=catch_year_ref_part2.df_reorder %>% filter(Scenario_type=="StatusQuo"&YEAR==2024), aes(yintercept= Rel_Diff_wg),colour="black",linewidth=0.75,linetype="dashed")+
+  scale_fill_manual(values=c_rel_diff,breaks=breaks_list,labels=str_wrap(breaks_list,25))+
+  labs(fill=" ")+
+  xlab("Scenario Code")+
+  ylab("Percent Change in Catch Weight from Reference Period")+
+  geom_hline(yintercept=0)+ 
+  theme_bw()+
+  bar_chart_text_theme+ 
+  bar_chart_legend_theme+
+  guides(fill = guide_legend(byrow = TRUE))
+  
+catch_year_ref_part2.df_reorder_plot
+
+```
+
+Following the first year of implementation:
+
+```{r year1.global}
+
+catch_year_ref_part2.df_reorder_plot2 <-
+  ggplot(data=catch_year_ref_part2.df_reorder[catch_year_ref_part2.df_reorder$YEAR==2020,])+
+  aes(x=SceName_short,y= Rel_Diff_wg,fill=Scenario_type)+ 
+  geom_bar(stat="identity")+ 
+  geom_hline(data=catch_year_ref_part2.df_reorder %>% filter(Scenario_type=="StatusQuo"&YEAR==2020), aes(yintercept= Rel_Diff_wg),colour="black",linewidth=0.75,linetype="dashed")+
+  scale_fill_manual(values=c_rel_diff,breaks=breaks_list,labels=str_wrap(breaks_list,25))+
+  labs(fill=" ")+
+  xlab("Scenario Code")+
+  ylab("Percent Change in Catch Weight from Reference Period")+
+  geom_hline(yintercept=0)+ 
+  theme_bw()+
+  bar_chart_text_theme+
+  bar_chart_legend_theme+
+  guides(fill=guide_legend(byrow = TRUE))
+
+catch_year_ref_part2.df_reorder_plot2
+
+```
+
+# Catch weight by age and prep figures
+
+The code below now looks at the catch weight by age and scenario trends after the first and fifth year of implemented.
+
+## Compute reference values
+
+Checking the reference values from the simulated results or ISIS-Fish terminal, you will find that both work and have the same output.
+
+```{r age.ref.vals}
+
+catch_year_age_ref_part1 <- catch_avec_ref[, list(Catch_sim_wg = sum(Catch_wg), Catch_ref_wg = sum(Catch_ref_wg)), by = list(YEAR,GROUP,simu,InitialAbundance,Recruitment,Connectivity,Scenarios)] 
+
+Catch_age_ref_aggregated <- subset(catch_avec_ref,Scenarios==0)
+
+Catch_age_ref_aggregated <- aggregate(Catch_ref_wg~YEAR+GROUP,
+                                      data = Catch_age_ref_aggregated,sum)
+
+Catch_age_ref_aggregated$YEAR <- as.character(Catch_age_ref_aggregated$YEAR)
+
+Catch_age_ref_years <- subset(Catch_age_ref_aggregated,YEAR<="2017")
+
+Catch_age_ref_ag_years_final <- aggregate(Catch_ref_wg~GROUP, data=Catch_age_ref_years, FUN=mean)
+
+```
+
+## Compute the relative difference
+
+Here ware interested in the global catch weight by age, so a relative difference must be calculated for each independently. Keep in mind that while effort reduction is applied at the metier level, we are only looking at the general patterns at this stage.
+
+```{r rel.diff.age}
+
+age0 <- subset(catch_year_age_ref_part1,GROUP==0)
+age0$Rel_Diff_wg<-((age0$Catch_sim_wg-Catch_age_ref_ag_years_final[1,2])/Catch_age_ref_ag_years_final[1,2])*100
+
+age1 <- subset(catch_year_age_ref_part1,GROUP==1)
+age1$Rel_Diff_wg<-((age1$Catch_sim_wg-Catch_age_ref_ag_years_final[2,2])/Catch_age_ref_ag_years_final[2,2])*100
+
+age2 <- subset(catch_year_age_ref_part1,GROUP==2)
+age2$Rel_Diff_wg<-((age2$Catch_sim_wg-Catch_age_ref_ag_years_final[3,2])/Catch_age_ref_ag_years_final[3,2])*100
+
+age3 <- subset(catch_year_age_ref_part1,GROUP==3)
+age3$Rel_Diff_wg<-((age3$Catch_sim_wg-Catch_age_ref_ag_years_final[4,2])/Catch_age_ref_ag_years_final[4,2])*100
+
+age4 <- subset(catch_year_age_ref_part1,GROUP==4)
+age4$Rel_Diff_wg<-((age4$Catch_sim_wg-Catch_age_ref_ag_years_final[5,2])/Catch_age_ref_ag_years_final[5,2])*100
+
+age5 <- subset(catch_year_age_ref_part1,GROUP==5)
+age5$Rel_Diff_wg<-((age5$Catch_sim_wg-Catch_age_ref_ag_years_final[6,2])/Catch_age_ref_ag_years_final[6,2])*100
+
+RelDiff_byAge_CatchWeight <- do.call("rbind", list(age0,age1,age2,age3,age4,age5))
+
+```
+
+## Prepare the data frame
+
+```{r age.prep}
+
+catch_year_age_ref_part2 <- RelDiff_byAge_CatchWeight[,c("YEAR","GROUP","Scenarios","Rel_Diff_wg")]
+
+catch_year_age_ref_part2$Scenarios <- as.factor(as.numeric(catch_year_age_ref_part2$Scenarios))
+
+catch_year_age_ref_part2.1 <- merge(catch_year_age_ref_part2,table_Sce_6.4,by=c("Scenarios"))
+
+catch_year_age_ref_part2.1$SceName <- factor(catch_year_age_ref_part2.1$SceName, levels = table_Sce_6.4$SceName)
+
+```
+
+## Create groups by scenario type
+
+The original study investigates 28 scenario measures and 504 combinations. But we simplify this here for the international audience.
+  
+```{r age.group.scen}
+
+Scenario_type <- seq(1:1680)
+catch_year_age_ref_part2.1 <- cbind(catch_year_age_ref_part2.1, Scenario_type)
+# View(catch_year_age_ref_part2.1)
+
+catch_year_age_ref_part2.1$Scenario_type <- 
+  replace(catch_year_age_ref_part2.1$Scenario_type,c(1:60),"StatusQuo")
+
+catch_year_age_ref_part2.1$Scenario_type <- 
+  replace(catch_year_age_ref_part2.1$Scenario_type,c(61:120,721:780,1261:1320),"All-at-once Trawler Effort Reduction")
+
+catch_year_age_ref_part2.1$Scenario_type <- 
+  replace(catch_year_age_ref_part2.1$Scenario_type,c(1501:1680),"All-at-once Effort Reduction Applied to All Gears")
+
+catch_year_age_ref_part2.1$Scenario_type <- 
+  replace(catch_year_age_ref_part2.1$Scenario_type,c(1321:1500),"Gradual Trawler Effort Reduction")
+
+catch_year_age_ref_part2.1$Scenario_type <- 
+  replace(catch_year_age_ref_part2.1$Scenario_type,c(121:300),"Gradual Effort Reduction Applied to All Gears")
+
+catch_year_age_ref_part2.1$Scenario_type <- 
+  replace(catch_year_age_ref_part2.1$Scenario_type,c(361:420,481:540,601:660),"Seasonal Spatial Closure Single Effects")
+
+catch_year_age_ref_part2.1$Scenario_type <- 
+  replace(catch_year_age_ref_part2.1$Scenario_type,c(301:360,421:480,541:600,661:720),"Annual Spatial Closure Single Effects")
+
+catch_year_age_ref_part2.1$Scenario_type <- 
+  replace(catch_year_age_ref_part2.1$Scenario_type,c(781:900),"With 90-100m Isobaths Spatial Closure Combined Effects")
+
+catch_year_age_ref_part2.1$Scenario_type <- 
+  replace(catch_year_age_ref_part2.1$Scenario_type,c(1021:1140),"Without 90-100m Isobaths Spatial Closure Combined Effects")
+
+catch_year_age_ref_part2.1$Scenario_type <- 
+  replace(catch_year_age_ref_part2.1$Scenario_type,c(901:1020),"Spatial Closure and Effort Reduction Combined Effects With the 90-100m Isobaths Closure")
+
+catch_year_age_ref_part2.1$Scenario_type <- 
+  replace(catch_year_age_ref_part2.1$Scenario_type,c(1141:1260),"Spatial Closure and Effort Reduction Combined Effects Without the 90-100m Isobaths Closure")
+
+catch_year_age_ref_part2.1.df <- as.data.frame(catch_year_age_ref_part2.1)
+catch_year_age_ref_part2.1.df$Scenario_type <- as.factor(catch_year_age_ref_part2.1.df$Scenario_type)
+
+```
+
+## Reorder the groups that we are interested in
+
+```{r age.reorder}
+
+catch_year_age_ref_part2.1.df_reorder <- 
+  catch_year_age_ref_part2.1.df %>% mutate(
+    SceName_short = 
+      recode_factor(SceName,
+                  "StatusQuo"= "a",
+                  "Trawler_30_Red"= "b",
+                  "AllGears_30_Red" = "c",
+                  "Trawler_40_Red" = "d",
+                  "AllGears_40_Red"= "e",
+                  "Trawler_50_Red"= "f",
+                  "AllGears_50_Red"= "g",
+                  "Trawler_10_20_30"= "h",
+                  "AllGears_10_20_30"= "i",
+                  "Trawler_10_17.5_25_32.5_40"= "j",
+                  "AllGears_10_17.5_25_32.5_40"= "k",
+                  "Trawler_10_20_30_40_50"= "l",
+                  "AllGears_10_20_30_40_50"= "m",
+                  "Original_FRA_allYear"= "n",
+                  "Northward_Expansion_of_FRA_Season"= "o",
+                  "Northward_Expansion_of_FRA_allYear" = "p",
+                  "90-100_Isobaths_Closure_Season"= "q",
+                  "90-100_Isobaths_Closure_allYear"= "r", 
+                  "Offshore_Closures_Season"= "s",
+                  "Offshore_Closures_allYear"= "t",
+                  "Northward_Expansion_of_FRA_90-100m_Offshore_Closures_Combined"= "u",
+                  "Northward_Expansion_of_FRA_Offshore_Closures_Combined" = "v",
+                  "Northward_Expansion_of_FRA_90-100m_Offshore_allYear_Closures_Combined" = "w",
+                  "Northward_Expansion_of_FRA_Offshore_allYear_Closures_Combined" = "x",
+                  "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures"= "y",
+                  "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures"= "z",
+                  "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures_allGears"= "aa",
+                  "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures_allGears"= "bb"
+                ))
+
+```
+
+## Adjust the colour palette
+
+```{r adj.age.palette}
+
+breaks_list_rep_weight <- rep_len(x=breaks_list,length.out=60)
+
+c_rel_diff_rep_weight <- rep_len(x=c_rel_diff,length.out=60)
+# pie(rep(1, 60), col=c_rel_diff_rep_weight)
+
+```
+
+## Graphing the relative difference in catch weight by age
+
+Following the fifth year of implementation, check for global age specific patterns.
+
+```{r year5.age}
+
+catch_year_age_ref_part2.1.df_reorder_plot <-
+  ggplot(data=catch_year_age_ref_part2.1.df_reorder[catch_year_age_ref_part2.1.df_reorder$YEAR==2024,])+
+  aes(x=SceName_short,y= Rel_Diff_wg,fill=Scenario_type)+ 
+  geom_bar(stat="identity",position=position_dodge())+ 
+  facet_grid(GROUP~.,scales="free")+ 
+  geom_hline(data=catch_year_age_ref_part2.1.df_reorder %>% filter(Scenario_type=="StatusQuo"&YEAR==2024), aes(yintercept= Rel_Diff_wg),colour="black",linewidth=0.75,linetype="dashed")+
+  scale_fill_manual(values=c_rel_diff_rep_weight,breaks=breaks_list_rep_weight,labels=str_wrap(breaks_list_rep_weight,25))+
+  labs(fill = " ")+
+  xlab("Scenario Code")+
+  ylab("Percent Change in Catch Weight from Reference Period")+
+  geom_hline(yintercept=0)+ 
+  theme_bw()+
+  bar_chart_text_theme+
+  bar_chart_legend_theme+
+  guides(fill = guide_legend(byrow = TRUE))
+
+catch_year_age_ref_part2.1.df_reorder_plot
+
+```
+
+Following the first year of implementation, check for global age specific patterns. 
+
+```{r year1.age}
+
+catch_year_age_ref_part2.1.df_reorder_plot2 <-
+  ggplot(data=catch_year_age_ref_part2.1.df_reorder[catch_year_age_ref_part2.1.df_reorder$YEAR==2020,])+
+  aes(x=SceName_short,y= Rel_Diff_wg,fill=Scenario_type)+ 
+  geom_bar(stat="identity",position=position_dodge())+ 
+  facet_grid(GROUP~.,scales="free")+
+  geom_hline(data=catch_year_age_ref_part2.1.df_reorder %>% filter(Scenario_type=="StatusQuo"&YEAR==2020), aes(yintercept= Rel_Diff_wg),colour="black",linewidth=0.75,linetype="dashed")+
+  scale_fill_manual(values=c_rel_diff_rep_weight,breaks=breaks_list_rep_weight,labels=str_wrap(breaks_list_rep_weight,25))+
+  labs(fill = " ")+
+  xlab("Scenario Code")+
+  ylab("Percent Change in Catch Weight from Reference Period")+
+  geom_hline(yintercept=0)+ 
+  theme_bw()+
+  bar_chart_text_theme+
+  bar_chart_legend_theme+
+  guides(fill = guide_legend(byrow = TRUE))
+
+catch_year_age_ref_part2.1.df_reorder_plot2
+
+```
+
+# Catch weight for only juveniles and prep figures
+
+The code below now looks at the catch weight for juveniles and scenario trends after the first and fifth year of implemented. We are checking for unique patterns for combined age classes 0 and 1. 
+ 
+## Compute reference values
+
+```{r juvenile.ref.vals}
+
+juvenile_catch_avec_ref <- catch_avec_ref[catch_avec_ref$GROUP<2,]
+
+juvenile_catch_ref_part1 <- juvenile_catch_avec_ref[, list(Catch_sim_wg = sum(Catch_wg), Catch_ref_wg = sum(Catch_ref_wg)), by = list(YEAR,simu,InitialAbundance,Recruitment,Connectivity,Scenarios)]
+
+Catch_juveniles_ref_aggregated <- subset(juvenile_catch_avec_ref,Scenarios==0)
+
+Catch_juveniles_ref_aggregated <- aggregate(Catch_ref_wg~YEAR,
+                                            data = Catch_juveniles_ref_aggregated,sum)
+
+Catch_juveniles_ref_aggregated$YEAR <- as.character(Catch_juveniles_ref_aggregated$YEAR)
+
+Catch_juveniles_ref_years <-subset(Catch_juveniles_ref_aggregated,YEAR<="2017")
+
+Catch_juveniles_ref_ag_years_final <- mean(Catch_juveniles_ref_years$Catch_ref_wg)
+
+```
+
+## Compute the relative difference
+
+Here ware interested in the global catch weight for juveniles, so a relative difference must be calculated for each independently. Keep in mind that while effort reduction is applied at the metier level, we are only looking at the general patterns at this stage.
+
+```{r rel.diff.juvenile}
+
+# Calculate relative differences (in weight:  Rel_Diff_wg)
+juvenile_catch_ref_part1$Rel_Diff_wg <- ((juvenile_catch_ref_part1$Catch_sim_wg - Catch_juveniles_ref_ag_years_final)/Catch_juveniles_ref_ag_years_final)*100
+
+```
+
+## Prepare the data frame
+
+```{r juvenile.prep}
+
+juvenile_catch_ref_part2 <- juvenile_catch_ref_part1[,c("YEAR","Scenarios","Rel_Diff_wg")]
+
+juvenile_catch_ref_part2$Scenarios <- as.factor(as.numeric(juvenile_catch_ref_part2$Scenarios))
+
+juvenile_catch_ref_part2.1 <- merge(juvenile_catch_ref_part2,table_Sce_6.4,by=c("Scenarios"))
+
+juvenile_catch_ref_part2.1$SceName <- factor(juvenile_catch_ref_part2.1$SceName, levels = table_Sce_6.4$SceName)
+
+```
+
+## Create groups by scenario type
+
+The original study investigates 28 scenario measures and 504 combinations. But we simplify this here for the international audience.
+
+```{r juvenile.group.scen}
+
+dim(juvenile_catch_ref_part2.1)
+Scenario_type <- seq(1:280)
+juvenile_catch_ref_part2.1 <- cbind(juvenile_catch_ref_part2.1, Scenario_type)
+# View(juvenile_catch_ref_part2.1)
+
+juvenile_catch_ref_part2.1$Scenario_type <- 
+  replace(juvenile_catch_ref_part2.1$Scenario_type,c(1:10),"StatusQuo")
+
+juvenile_catch_ref_part2.1$Scenario_type <- 
+  replace(juvenile_catch_ref_part2.1$Scenario_type,c(11:20,121:130,211:230),"All-at-once Trawler Effort Reduction")
+
+juvenile_catch_ref_part2.1$Scenario_type <- 
+  replace(juvenile_catch_ref_part2.1$Scenario_type,c(251:280),"All-at-once Effort Reduction Applied to All Gears")
+
+juvenile_catch_ref_part2.1$Scenario_type <- 
+  replace(juvenile_catch_ref_part2.1$Scenario_type,c(221:250),"Gradual Trawler Effort Reduction")
+
+juvenile_catch_ref_part2.1$Scenario_type <- 
+  replace(juvenile_catch_ref_part2.1$Scenario_type,c(21:50),"Gradual Effort Reduction Applied to All Gears")
+
+juvenile_catch_ref_part2.1$Scenario_type <- 
+  replace(juvenile_catch_ref_part2.1$Scenario_type,c(61:70,81:90,101:110),"Seasonal Spatial Closure Single Effects")
+
+juvenile_catch_ref_part2.1$Scenario_type <- 
+  replace(juvenile_catch_ref_part2.1$Scenario_type,c(51:60,71:80,91:100,111:120),"Annual Spatial Closure Single Effects")
+
+juvenile_catch_ref_part2.1$Scenario_type <- 
+  replace(juvenile_catch_ref_part2.1$Scenario_type,c(131:150),"With 90-100m Isobaths Spatial Closure Combined Effects")
+
+juvenile_catch_ref_part2.1$Scenario_type <- 
+  replace(juvenile_catch_ref_part2.1$Scenario_type,c(171:190),"Without 90-100m Isobaths Spatial Closure Combined Effects")
+
+juvenile_catch_ref_part2.1$Scenario_type <- 
+  replace(juvenile_catch_ref_part2.1$Scenario_type,c(151:170),"Spatial Closure and Effort Reduction Combined Effects With the 90-100m Isobaths Closure")
+
+juvenile_catch_ref_part2.1$Scenario_type <- 
+  replace(juvenile_catch_ref_part2.1$Scenario_type,c(191:210),"Spatial Closure and Effort Reduction Combined Effects Without the 90-100m Isobaths Closure")
+
+juvenile_catch_ref_part2.1.df <- as.data.frame(juvenile_catch_ref_part2.1)
+juvenile_catch_ref_part2.1.df$Scenario_type <- as.factor(juvenile_catch_ref_part2.1.df$Scenario_type)
+
+```
+
+## Reorder the groups that we are interested in
+
+```{r juvenile.reorder}
+
+juvenile_catch_ref_part2.1.df_reorder <- 
+  juvenile_catch_ref_part2.1.df %>% mutate(
+    SceName_short = 
+      recode_factor(SceName,
+                  "StatusQuo"= "a",
+                  "Trawler_30_Red"= "b",
+                  "AllGears_30_Red" = "c",
+                  "Trawler_40_Red" = "d",
+                  "AllGears_40_Red"= "e",
+                  "Trawler_50_Red"= "f",
+                  "AllGears_50_Red"= "g",
+                  "Trawler_10_20_30"= "h",
+                  "AllGears_10_20_30"= "i",
+                  "Trawler_10_17.5_25_32.5_40"= "j",
+                  "AllGears_10_17.5_25_32.5_40"= "k",
+                  "Trawler_10_20_30_40_50"= "l",
+                  "AllGears_10_20_30_40_50"= "m",
+                  "Original_FRA_allYear"= "n",
+                  "Northward_Expansion_of_FRA_Season"= "o",
+                  "Northward_Expansion_of_FRA_allYear" = "p",
+                  "90-100_Isobaths_Closure_Season"= "q",
+                  "90-100_Isobaths_Closure_allYear"= "r", 
+                  "Offshore_Closures_Season"= "s",
+                  "Offshore_Closures_allYear"= "t",
+                  "Northward_Expansion_of_FRA_90-100m_Offshore_Closures_Combined"= "u",
+                  "Northward_Expansion_of_FRA_Offshore_Closures_Combined" = "v",
+                  "Northward_Expansion_of_FRA_90-100m_Offshore_allYear_Closures_Combined" = "w",
+                  "Northward_Expansion_of_FRA_Offshore_allYear_Closures_Combined" = "x",
+                  "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures"= "y",
+                  "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures"= "z",
+                  "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures_allGears"= "aa",
+                  "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures_allGears"= "bb"
+                ))
+
+```
+
+# Catch weight for mature individuals and prep figures
+
+The code below now looks at the catch weight for mature individuals and scenario trends after the first and fifth year of implemented. 
+
+## Compute reference values
+
+```{r mature.ref.vals}
+
+mature_catch_avec_ref <- catch_avec_ref[catch_avec_ref$GROUP>1,]
+
+mature_catch_ref_part1 <- mature_catch_avec_ref[, list(Catch_sim_wg = sum(Catch_wg), Catch_ref_wg = sum(Catch_ref_wg)), by = list(YEAR,simu,InitialAbundance,Recruitment,Connectivity,Scenarios)]
+
+Catch_mature_ref_aggregated <- subset(mature_catch_avec_ref,Scenarios==0)
+
+Catch_mature_ref_aggregated <- aggregate(Catch_ref_wg~YEAR,
+                                         data = Catch_mature_ref_aggregated,sum)
+
+Catch_mature_ref_aggregated$YEAR <- as.character(Catch_mature_ref_aggregated$YEAR)
+
+Catch_mature_ref_years <-subset(Catch_mature_ref_aggregated,YEAR<="2017")
+
+Catch_mature_ref_ag_years_final <- mean(Catch_mature_ref_years$Catch_ref_wg)
+
+```
+
+## Compute the relative dfference
+
+```{r rel.diff.mature}
+
+# Calculate relative differences (in weight:  Rel_Diff_wg)
+mature_catch_ref_part1$Rel_Diff_wg <- ((mature_catch_ref_part1$Catch_sim_wg - Catch_mature_ref_ag_years_final)/Catch_mature_ref_ag_years_final)*100
+
+```
+
+## Prepare the data frame
+
+```{r prep.mature}
+
+mature_catch_ref_part2 <- mature_catch_ref_part1[,c("YEAR","Scenarios","Rel_Diff_wg")]
+
+mature_catch_ref_part2$Scenarios <- as.factor(as.numeric(mature_catch_ref_part2$Scenarios))
+
+mature_catch_ref_part2.1 <- merge(mature_catch_ref_part2,table_Sce_6.4,by=c("Scenarios"))
+
+mature_catch_ref_part2.1$SceName <- factor(mature_catch_ref_part2.1$SceName, levels = table_Sce_6.4$SceName)
+
+```
+
+## Create groups by scenario type
+
+The original study investigates 28 scenario measures and 504 combinations. But we simplify this here for the international audience.
+
+```{r mature.group.scen}
+
+dim(mature_catch_ref_part2.1)
+Scenario_type <- seq(1:280)
+mature_catch_ref_part2.1 <- cbind(mature_catch_ref_part2.1, Scenario_type)
+# View(mature_catch_ref_part2.1)
+
+mature_catch_ref_part2.1$Scenario_type <- 
+  replace(mature_catch_ref_part2.1$Scenario_type,c(1:10),"StatusQuo")
+
+mature_catch_ref_part2.1$Scenario_type <- 
+  replace(mature_catch_ref_part2.1$Scenario_type,c(11:20,121:130,211:230),"All-at-once Trawler Effort Reduction")
+
+mature_catch_ref_part2.1$Scenario_type <- 
+  replace(mature_catch_ref_part2.1$Scenario_type,c(251:280),"All-at-once Effort Reduction Applied to All Gears")
+
+mature_catch_ref_part2.1$Scenario_type <- 
+  replace(mature_catch_ref_part2.1$Scenario_type,c(221:250),"Gradual Trawler Effort Reduction")
+
+mature_catch_ref_part2.1$Scenario_type <- 
+  replace(mature_catch_ref_part2.1$Scenario_type,c(21:50),"Gradual Effort Reduction Applied to All Gears")
+
+mature_catch_ref_part2.1$Scenario_type <- 
+  replace(mature_catch_ref_part2.1$Scenario_type,c(61:70,81:90,101:110),"Seasonal Spatial Closure Single Effects")
+
+mature_catch_ref_part2.1$Scenario_type <- 
+  replace(mature_catch_ref_part2.1$Scenario_type,c(51:60,71:80,91:100,111:120),"Annual Spatial Closure Single Effects")
+
+mature_catch_ref_part2.1$Scenario_type <- 
+  replace(mature_catch_ref_part2.1$Scenario_type,c(131:150),"With 90-100m Isobaths Spatial Closure Combined Effects")
+
+mature_catch_ref_part2.1$Scenario_type <- 
+  replace(mature_catch_ref_part2.1$Scenario_type,c(171:190),"Without 90-100m Isobaths Spatial Closure Combined Effects")
+
+mature_catch_ref_part2.1$Scenario_type <- 
+  replace(mature_catch_ref_part2.1$Scenario_type,c(151:170),"Spatial Closure and Effort Reduction Combined Effects With the 90-100m Isobaths Closure")
+
+mature_catch_ref_part2.1$Scenario_type <- 
+  replace(mature_catch_ref_part2.1$Scenario_type,c(191:210),"Spatial Closure and Effort Reduction Combined Effects Without the 90-100m Isobaths Closure")
+
+mature_catch_ref_part2.1.df <- as.data.frame(mature_catch_ref_part2.1)
+mature_catch_ref_part2.1.df$Scenario_type <- as.factor(mature_catch_ref_part2.1.df$Scenario_type)
+
+```
+
+## Reorder the groups that we are interested in
+
+```{r mature.reorder}
+
+mature_catch_ref_part2.1.df_reorder <- 
+  mature_catch_ref_part2.1.df %>% mutate(
+    SceName_short = 
+      recode_factor(SceName,
+                  "StatusQuo"= "a",
+                  "Trawler_30_Red"= "b",
+                  "AllGears_30_Red" = "c",
+                  "Trawler_40_Red" = "d",
+                  "AllGears_40_Red"= "e",
+                  "Trawler_50_Red"= "f",
+                  "AllGears_50_Red"= "g",
+                  "Trawler_10_20_30"= "h",
+                  "AllGears_10_20_30"= "i",
+                  "Trawler_10_17.5_25_32.5_40"= "j",
+                  "AllGears_10_17.5_25_32.5_40"= "k",
+                  "Trawler_10_20_30_40_50"= "l",
+                  "AllGears_10_20_30_40_50"= "m",
+                  "Original_FRA_allYear"= "n",
+                  "Northward_Expansion_of_FRA_Season"= "o",
+                  "Northward_Expansion_of_FRA_allYear" = "p",
+                  "90-100_Isobaths_Closure_Season"= "q",
+                  "90-100_Isobaths_Closure_allYear"= "r", 
+                  "Offshore_Closures_Season"= "s",
+                  "Offshore_Closures_allYear"= "t",
+                  "Northward_Expansion_of_FRA_90-100m_Offshore_Closures_Combined"= "u",
+                  "Northward_Expansion_of_FRA_Offshore_Closures_Combined" = "v",
+                  "Northward_Expansion_of_FRA_90-100m_Offshore_allYear_Closures_Combined" = "w",
+                  "Northward_Expansion_of_FRA_Offshore_allYear_Closures_Combined" = "x",
+                  "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures"= "y",
+                  "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures"= "z",
+                  "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures_allGears"= "aa",
+                  "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures_allGears"= "bb"
+                ))
+
+```
+
+# Join together the two grouped age class categories and plot
+
+```{r merge.maturity.stage}
+
+mature_catch_ref_part2.1.df_reorder$GROUP <- "mature"
+juvenile_catch_ref_part2.1.df_reorder$GROUP <- "Juveniles"
+
+full_catch_ref_by_grouped_age <- rbind(mature_catch_ref_part2.1.df_reorder, juvenile_catch_ref_part2.1.df_reorder)
+
+```
+
+## Save output
+
+```{r save.outputs.maturity.stage}
+
+fwrite(full_catch_ref_by_grouped_age, file=paste(path, "Data/global.catch.weight.by.maturity.year.csv", sep=""), sep=";")
+
+```
+
+## Creat plots by maturity and year
+
+Following the fifth years of implementation:
+
+```{r year5.maturity.stage}
+
+Grouped_catches.plot <- ggplot(data=full_catch_ref_by_grouped_age[full_catch_ref_by_grouped_age$YEAR==2024,])+
+  aes(x=SceName_short,y= Rel_Diff_wg,fill=Scenario_type)+ 
+  geom_bar(stat="identity",position=position_dodge())+
+  facet_grid(GROUP~.,scales="free")+ 
+  geom_hline(data=full_catch_ref_by_grouped_age %>% filter(GROUP=="Juveniles"&YEAR==2024), aes(yintercept= -20),colour="red",linewidth=0.75,linetype="solid")+
+  geom_hline(data=full_catch_ref_by_grouped_age %>% filter(Scenario_type=="StatusQuo"&YEAR==2024), aes(yintercept= Rel_Diff_wg), colour="black",linewidth=0.75,linetype="dashed")+
+  scale_fill_manual(values=c_rel_diff,breaks=breaks_list,labels=str_wrap(breaks_list,25))+
+  labs(fill = " ")+
+  xlab("Scenario Code")+
+  ylab("Percent Change in Catch Weight from Reference Period")+
+  geom_hline(yintercept=0)+ 
+  theme_bw()+
+  bar_chart_text_theme+
+  bar_chart_legend_theme+
+  guides(fill = guide_legend(byrow = TRUE))
+
+Grouped_catches.plot
+
+```
+
+Following the first year of implementation:
+
+```{r year1.maturity.stage}
+
+Grouped_catches.plot2 <- ggplot(data=full_catch_ref_by_grouped_age[full_catch_ref_by_grouped_age$YEAR==2020,])+
+  aes(x=SceName_short,y= Rel_Diff_wg,fill=Scenario_type)+ 
+  geom_bar(stat="identity",position=position_dodge())+
+  facet_grid(GROUP~.,scales="free")+ 
+  geom_hline(data=full_catch_ref_by_grouped_age %>% filter(GROUP=="Juveniles"&YEAR==2020), aes(yintercept= -20),colour="red",linewidth=0.75,linetype="solid")+
+  geom_hline(data=full_catch_ref_by_grouped_age %>% filter(Scenario_type=="StatusQuo"&YEAR==2020), aes(yintercept= Rel_Diff_wg), colour="black",linewidth=0.75,linetype="dashed")+
+  scale_fill_manual(values=c_rel_diff,breaks=breaks_list,labels=str_wrap(breaks_list,25))+
+  labs(fill = " ")+
+  xlab("Scenario Code")+
+  ylab("Percent Change in Catch Weight from Reference Period")+
+  geom_hline(yintercept=0)+ 
+  theme_bw()+
+  bar_chart_text_theme+
+  bar_chart_legend_theme+
+  guides(fill = guide_legend(byrow = TRUE))
+
+Grouped_catches.plot2
+
+```
+
+# Create panel figures
+
+These will be more useful for the paper. Note that the tagger needs to be added after the figures are made due to conflicts.
+
+## Install packages
+
+```{r set.up.pannels}
+
+list.of.packages2 <- c("prettyunits","htmlwidgets","checkmate","devtools")
+new.packages <- list.of.packages2[!(list.of.packages2 %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+
+tagger.package <- "tagger"
+new.tagger <- tagger.package[!(tagger.package %in% installed.packages()[,"Package"])]
+if(length(new.tagger)) devtools::install_github("eliocamp/tagger")
+
+library(tagger) #For tag_facet
+
+```
+
+## Create custom themes
+
+```{r custom.theme2}
+
+panel_bar_chart_text_theme1 <- theme(axis.title.x = element_blank(), axis.ticks.x = element_blank(), axis.text.x.bottom = element_blank(), axis.text.y = element_text(margin=margin(t=0,r=0,b=0,l=0), size = 12), axis.title.y = element_text(size = 14), strip.text = element_text(size=12), panel.spacing = unit(0.35, "cm"), tagger.panel.tag.text = element_text(color = "black", size = 14, family = "bold"), plot.margin = unit(c(0.2,0.2,0.2,0.2),"cm"))
+
+panel_bar_chart_text_theme2 <- theme(axis.title.x = element_text(margin=margin(t=5,r=0,b=0,l=0), size = 14), axis.text.y = element_text(margin=margin(t=0,r=0,b=0,l=0), size = 12), axis.text.x.bottom = element_text(margin=margin(t=0,r=0,b=0,l=0), size = 12), axis.title.y = element_text(size = 14), strip.text = element_blank(), panel.spacing = unit(0.35, "cm"), tagger.panel.tag.text = element_text(color = "black", size = 14, family = "bold"), plot.margin = unit(c(0.2,0.2,0.2,0.2),"cm"))
+
+```
+
+## For total annual catch weight panel
+
+This panel is presenting in Appendix F, Fig. 8.
+
+```{r Appendix.Fig.F.7}
+
+xplot1 <- catch_year_ref_part2.df_reorder_plot2
+yplot1 <- catch_year_ref_part2.df_reorder_plot
+
+TotalCatchWeights <- ggarrange(xplot1 +
+                                 tag_facets(tag = "panel", tag_pool= "Year 1",
+                                            tag_prefix = "",
+                                            tag_suffix = "",
+                                            tag_sep = ".") +
+                                 rremove("ylab"),
+                               yplot1 +
+                                 tag_facets(tag = "panel", tag_pool= "Year 5",
+                                            tag_prefix = "",
+                                            tag_suffix = "",
+                                            tag_sep = ".") +
+                                 rremove("ylab"),
+                               ncol=2,nrow=1,align="hv",
+                               widths=c(1,1),heights=c(1,1),
+                               common.legend=TRUE,legend="bottom",hjust=0, vjust=-0.25)
+
+TotalCatchWeights <- annotate_figure(TotalCatchWeights,
+                                     left=text_grob("Percent Change in Catch Weight from Reference Period",color="black",rot=90,size=14))
+ 
+TotalCatchWeights
+
+ggsave2(filename="Appendix.Fig.F.7.pdf",plot=TotalCatchWeights, device="pdf", path=paste(path,"Figures",sep=""), dpi=1200, width = 29.7, height = 21, unit="cm", limitsize = FALSE)
+
+```
+
+## For annual catch weight by age panel (not included in publication)
+
+```{r catch.by.age.panel}
+
+xplot2 <- catch_year_age_ref_part2.1.df_reorder_plot2
+yplot2 <- catch_year_age_ref_part2.1.df_reorder_plot
+
+CatchWeights_byAge <- ggarrange(xplot2 +
+                                  tag_facets(tag = "panel", tag_pool= c("Year 1", "Year 1", "Year 1", "Year 1", "Year 1", "Year 1"),
+                                             tag_prefix = "",
+                                             tag_suffix = "",
+                                             tag_sep = ".") +
+                                  rremove("ylab"),
+                                yplot2 +
+                                  tag_facets(tag = "panel",
+                                             tag_pool= c("Year 5", "Year 5", "Year 5", "Year 5", "Year 5", "Year 5"),
+                                             tag_prefix = "",
+                                             tag_suffix = "",
+                                             tag_sep = ".") +
+                                  rremove("ylab"),
+                                ncol=2,nrow=1,align="hv",
+                                widths=c(1,1),heights=c(1,1),
+                                common.legend=TRUE,legend="bottom",hjust=0, vjust=-0.25)
+
+CatchWeights_byAge <- annotate_figure(CatchWeights_byAge,
+                                      left=text_grob("Percent Change in Catch Weight from Reference Period",color="black",rot=90,size=14))
+
+CatchWeights_byAge
+
+ggsave2(filename="CatchWeights_byAge.pdf",plot=CatchWeights_byAge, device="pdf", path=paste(path,"Figures",sep=""), dpi=1200, width = 29.7, height = 42, unit="cm", limitsize = FALSE)
+
+```
+
+## For annual catch weight by maturity stage panel (not included in publication)
+
+```{r catch.maturity.stage.panel}
+
+xplot3 <- Grouped_catches.plot2
+yplot3 <- Grouped_catches.plot
+
+Grouped_catches <- ggarrange(xplot3 +
+                               tag_facets(tag = "panel", tag_pool= c("Year 1", "Year 1"),
+                                          tag_prefix = "",
+                                          tag_suffix = "",
+                                          tag_sep = ".") +
+                               rremove("ylab"),
+                             yplot3 +
+                               tag_facets(tag = "panel",
+                                          tag_pool= c("Year 5", "Year 5"),
+                                          tag_prefix = "",
+                                          tag_suffix = "",
+                                          tag_sep = ".") +
+                               rremove("ylab"),
+                             ncol=2,nrow=1,align="hv",
+                             widths=c(1,1),heights=c(1,1),
+                             common.legend=TRUE,legend="bottom",hjust=0, vjust=-0.25)
+
+Grouped_catches <- annotate_figure(Grouped_catches,
+                                   left=text_grob("Percent Change in Catch Weight from Reference Period",color="black",rot=90,size=14))
+
+Grouped_catches
+
+ggsave2(filename="Grouped_catches.pdf",plot=Grouped_catches, device="pdf", path=paste(path,"Figures",sep=""), dpi=1200, width = 29.7, height = 21, unit="cm", limitsize = FALSE)
+
+```
+
+## Exact numbers of relative change 
+
+Here we apply basic computations to highlight main points in the results section.
+
+```{r exact.vals.comp.1, results="markup"}
+
+year1_percent <- catch_year_ref_part2.df_reorder %>%
+  filter(YEAR==2020)
+
+statuval.yr1 <- year1_percent %>%
+  filter(Scenarios == 0)
+
+year1_percent$diffstatu <- ((year1_percent$Rel_Diff_wg - statuval.yr1$Rel_Diff_wg)/statuval.yr1$Rel_Diff_wg)*100
+
+View(year1_percent)
+
+```
+
+```{r exact.vals.comp.2, results="markup"}
+
+year5_percent <- catch_year_ref_part2.df_reorder %>%
+  filter(YEAR==2024)
+
+statuval.yr5 <- year5_percent %>%
+  filter(Scenarios == 0)
+
+year5_percent$diffstatu <- ((year5_percent$Rel_Diff_wg - statuval.yr5$Rel_Diff_wg)/statuval.yr5$Rel_Diff_wg)*100
+
+View(year5_percent)
+
+```

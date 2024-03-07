@@ -1,0 +1,904 @@
+---
+_title: "MEDISIS VPUE"
+author: "Stephanie Hopkins"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document:
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+
+rm(list=ls())
+
+knitr::opts_chunk$set(echo=TRUE, warning=FALSE, message=FALSE, results = "hide")
+
+list.of.packages <- c("data.table","tidyverse","cowplot","ggtext","sf","scales","ggrepel")
+
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+
+library(sf)
+library(data.table)
+library(cowplot)
+library(tidyverse)
+library(ggtext)
+library(scales)
+library(ggrepel)
+
+# To Replace with your file directory
+dir <- "C:/Users/steph/Documents"
+
+MEDISIS <- "/MEDISIS/Part2.Analysing.the.simulation.output/"
+
+path <- paste(dir,MEDISIS,sep="")
+
+```
+
+# Make your life easy and save custom themes
+
+```{r plot.themes}
+
+bar_chart_text_theme <- theme(axis.title.x = element_text(margin=margin(t=5,r=0,b=0,l=0), size = 14), axis.text.y = element_text(margin=margin(t=0,r=1,b=0,l=0), size = 12), axis.text.x = element_text(margin=margin(t=2,r=0,b=0,l=0), size = 12, angle = 60, hjust=0.95, vjust=0.98),axis.title.y = element_text(size = 14), strip.text = element_text(size=12), panel.spacing = unit(0.5, "cm")) 
+
+bar_chart_legend_theme <- theme(legend.title = element_blank(), legend.text = element_text(size = 12),legend.text.align = 0, legend.direction = "horizontal", legend.spacing = unit(0.001, 'cm'), legend.key.height = unit(1.52, 'cm'), legend.key.width = unit(1.5, 'cm'), legend.position="bottom")
+
+```
+
+# Load data
+
+Because we cannot provide vessel information, here are the aggregated data sets as well as the aggregated data used to make Appendix Figs. A1 and E.2.
+
+```{r aggregated.data}
+
+
+percent.catchweights <- fread(paste(path,
+                                    "Data/Revenues/percent.catch.by.species.csv",
+                                    sep=""), sep = ";")
+
+percent.revenues <- fread(paste(path,
+                                "Data/Revenues/percent.revenues.by.species.csv",
+                                sep=""), sep = ";")
+
+```
+
+# Create summary figures
+
+Set species labels for the data summary figures.
+
+```{r summary.chart.labels}
+
+species.labels <- c("*Merluccius merluccius*",
+                    "*Octopus vulgaris* & *Eledone spp.*", 
+                    "*Lophius spp.*","Loliginidae","*Mullus spp.*",
+                    "*Engraulis encrasicolus*","*Scomber scombrus*", 
+                    "*Trisopterus minutus*","*Solea solea*",
+                    "*Illex spp.*","Others")
+
+```
+
+For catch composition in 2017 (i.e., Appendix A, Fig. A.1):
+
+```{r Appendix.Fig.A1}
+
+# Basic piechart
+catchweight_demographics <- ggplot(percent.catchweights, aes(x="", y=percent, fill = TAXON_GROUP_NAME)) +
+  geom_bar(stat="identity", width=0.1, color="black") +
+  coord_polar("y", start = 0) +
+  geom_label_repel(aes(x = 1.04, label = labels), color = c("white","white","white","white","white","white","black","white","white","white", "white"),position = position_stack(vjust = 0.5), show.legend = FALSE, size = 6) +
+  scale_fill_viridis_d("Most Caught Species", labels = species.labels) +
+  theme_void() + 
+  theme(legend.text = element_markdown(size = 16),
+        legend.title = element_text(size=18))
+
+catchweight_demographics
+
+ggsave2(filename="CatchWeight_deomographics_2017.pdf",plot=catchweight_demographics, device="pdf", path=paste(path,"Figures/",sep=""), dpi=1200, width = 29.7, height = 21, unit="cm", limitsize = FALSE)
+
+```
+
+For most profitable species in 2017 (i.e., Appendix E, Fig. E.2):
+
+```{r Appendix.Fig.E2}
+
+# Basic piechart
+revenue_demographics <- ggplot(percent.revenues, aes(x="", y=percent, fill = TAXON_GROUP_NAME)) +
+  geom_bar(stat="identity", width=0.1, color="black") +
+  coord_polar("y", start = 0) +
+  geom_label_repel(aes(x = 1.04, label = labels), color = c("white","black","white","white","white","white","white","white","white","white", "white"),position = position_stack(vjust = 0.5), show.legend = FALSE, size = 6) +
+  scale_fill_viridis_d("Most Valuable Species", 
+                       labels=species.labels) +
+  theme_void() + 
+  theme(legend.text = element_markdown(size = 16), 
+        legend.title = element_text(size=18))
+ 
+revenue_demographics
+
+ggsave2(filename="revenue_demographics.2017.pdf",plot=revenue_demographics, device="pdf", path=paste(path,"Figures/",sep=""), dpi=1200, width = 29.7, height = 21, unit="cm", limitsize = FALSE)
+
+```
+
+# STOP!!! Subset 2017 VPUE to apply spatial closures
+
+Note that the code below up until chunk "extend.2018.2019" is only for demonstrative purposes. The data required to run this code has personal identifying information, which cannot be shared. The output of this code was used only for projecting VPUE values from the simulation years 2018 to 2024.
+
+```{r}
+
+Species_VPUE_sptl <- subset(sac_vpue, YEAR == 2017)
+
+dim(Species_VPUE_sptl)
+# [1] 424310     12
+
+head(Species_VPUE_sptl)
+
+unique(is.na(sac_vpue))
+
+Species_VPUE_sptl <- st_as_sf(Species_VPUE_sptl, coords=c("lon","lat"), crs = st_crs(4326))
+
+Species_VPUE_sptl$FID <- seq(1:424310)
+
+```
+
+# Load Spatial Closures
+
+```{r spatial_closures}
+
+GDL_extension <- "Extra/carto/shapefile/Europe_coastline_shapefile/"
+
+GDL <- read_sf(paste(path, "/Data/Shape.Files/", GDL_extension, "GDL.shp", sep = ""))
+
+GDL_crop <- st_crop(GDL, xmin=2.95, xmax=6.05, ymin=41.95, ymax=43.6)
+
+rm(GDL)
+
+grid <- read_sf(paste(path, "/Data/Shape.Files/", "Grid/grid.shp", sep = ""))
+
+FRA <- read_sf(paste(path, "/Data/Shape.Files/", "FRA/FRAs_WGS84.shp", sep = ""))
+FRA <- FRA[1,]
+
+NewFRA_regulation <- read_sf(paste(path, "/Data/Shape.Files/", "NewFRA_regulation/boxPaca_polygon_4326.shp", sep = ""))
+
+zone_90_100_simplified <- read_sf(paste(path, "/Data/Shape.Files/", "zone_90_100_simplified/zone_90_100_simplifiee_Visvalingram_0_05_deg_accroche_dm_polygon_4326.shp", sep = ""))
+
+Offshore_closure_z1 <- read_sf(paste(path, "/Data/Shape.Files/", "Offshore_closures/zone1.shp", sep = ""))
+
+Offshore_closure_z2 <- read_sf(paste(path, "/Data/Shape.Files/", "Offshore_closures/zone2.shp", sep = ""))
+
+Offshore_closure_z3 <- read_sf(paste(path, "/Data/Shape.Files/", "Offshore_closures/zone3.shp", sep = ""))
+
+# Group the Offshore_closures into one file
+Offshore_permanent_spdf <- rbind(Offshore_closure_z1, Offshore_closure_z2, Offshore_closure_z3)
+
+Offshore_closure_seasonal <- read_sf(paste(path, "/Data/Shape.Files/", "Offshore_closures/Offshore_closure_seasonal_final.shp", sep = ""))
+
+# load zone files
+continental_sf <- read_sf(paste(path, "/Data/Shape.Files/", "continental_sf.new.shp", sep = ""))
+canyon_sf <- read_sf(paste(path, "/Data/Shape.Files/", "canyon_sf.new.shp", sep = ""))
+
+```
+
+# Apply closure conditions
+
+## Original FRA (permanent)
+
+Recall this is applied only OTT and OTB and is closed from January to December.
+
+```{r original.FRA}
+
+# Create a vector of months spatial closure is applied
+FRA_temporal <- c(1:12)
+
+# Create a vector of gears applicable to the spatial closure 
+FRA_target_gear <- c("OTT","OTB")
+
+# Isolate sequences that fall within the months and gears applied above
+FRA_overlap.points <- subset(Species_VPUE_sptl, subset = MONTH %in% FRA_temporal & GEAR_LABEL %in% FRA_target_gear)
+
+# Check the structure
+class(FRA_overlap.points)
+
+# Find all fishing points from the isolated sequences that fall within the spatial closure definitions
+FRA_inside <- FRA_overlap.points[FRA,]
+
+# Check the dimensions of the data
+dim(FRA_inside)
+# [1] 7226   13
+
+# Because we do not want to include zeros in the average, set catch weight to zero for the cells
+FRA_inside$VPUE <- NA
+
+FRA_inside.FIDs <- sort(as.vector(FRA_inside$FID))
+
+FRA_inside <- FRA_inside %>% 
+  mutate(LON = unlist(map(FRA_inside$geometry,1)), 
+         LAT = unlist(map(FRA_inside$geometry,2))) %>%
+  st_drop_geometry()
+
+dim(FRA_inside)
+# [1] 7226   14
+
+Species_VPUE_sptl_FRA.norm <- Species_VPUE_sptl %>% 
+  mutate(LON = unlist(map(Species_VPUE_sptl$geometry,1)), 
+         LAT = unlist(map(Species_VPUE_sptl$geometry,2))) %>%
+  st_drop_geometry() %>%
+  filter(!FID %in% FRA_inside.FIDs)
+
+Species_VPUE_sptl_FRA.scen <- rbind(FRA_inside,Species_VPUE_sptl_FRA.norm)
+
+Species_VPUE_sptl_FRA.scen$METIER <- paste0(Species_VPUE_sptl_FRA.scen$METIER, "_FRA", sep="")
+
+#------------------------------------------------------------------------
+
+# View(Species_VPUE_sptl_FRA.scen)
+
+test.FRA.output <- Species_VPUE_sptl_FRA.scen %>%
+  filter(VESSEL_FK == 16142 & TAXON_GROUP_NAME == "Illex spp." & STRATEGY == "XST_24-40_OTBpur" & METIER == "OTB_XST_24-40_FRA" & FISHING_TIME < 0.031 & FISHING_TIME > 0.028)
+  
+# View(test.FRA.output)
+
+#------------------------------------------------------------------------
+
+VPUE_by_metier_species.FRA <- Species_VPUE_sptl_FRA.scen %>%
+  st_drop_geometry() %>%
+  group_by(TAXON_GROUP_NAME, YEAR, MONTH, METIER) %>%
+  summarise(VPUE = mean(VPUE, na.rm=T), .groups="keep") %>%
+  ungroup()
+
+head(VPUE_by_metier_species.FRA)
+
+```
+
+## Northward expansion of the FRA (seasonal)
+
+Recall this is applied only OTT and OTB and is closed from November to April.
+
+```{r north.west.FRA.expand.seas}
+
+# Create a vector of months spatial closure is applied
+NewFRA_reg_seasonal_temporal <- c(11:12,1:4)
+
+# Create a vector of gears applicable to the spatial closure 
+NewFRA_reg_seasonal_target_gear <- c("OTT","OTB")
+
+# Isolate sequences that fall within the months and gears applied above
+NewFRA_reg_seasonal_overlap.points <- subset(Species_VPUE_sptl,
+                                             subset = MONTH %in%
+                                               NewFRA_reg_seasonal_temporal &
+                                               GEAR_LABEL %in%
+                                               NewFRA_reg_seasonal_target_gear)
+
+# Check the structure
+class(NewFRA_reg_seasonal_overlap.points)
+
+# Find all fishing points from the isolated sequences that fall within the spatial closure definitions
+NewFRA_reg_seasonal_inside <- NewFRA_reg_seasonal_overlap.points[NewFRA_regulation,]
+
+dim(NewFRA_reg_seasonal_inside)
+# [1] 7045   13
+
+# Because we do not want to include zeros in the average, set catch weight to zero for the cells
+NewFRA_reg_seasonal_inside$val <- NA
+
+NewFRA_reg_seasonal_inside.FIDs <- sort(as.vector(NewFRA_reg_seasonal_inside$FID))
+
+NewFRA_reg_seasonal_inside <- NewFRA_reg_seasonal_inside %>% 
+  mutate(LON = unlist(map(NewFRA_reg_seasonal_inside$geometry,1)), 
+         LAT = unlist(map(NewFRA_reg_seasonal_inside$geometry,2))) %>%
+  st_drop_geometry()
+
+Species_VPUE_sptl_NewFRA_reg_seasonal.norm <- Species_VPUE_sptl %>%
+  mutate(LON = unlist(map(Species_VPUE_sptl$geometry,1)), 
+         LAT = unlist(map(Species_VPUE_sptl$geometry,2))) %>%
+  st_drop_geometry() %>%
+  filter(!FID %in% NewFRA_reg_seasonal_inside.FIDs)
+
+Species_VPUE_sptl_NewFRA_reg_seasonal.scen <- rbind(NewFRA_reg_seasonal_inside, Species_VPUE_sptl_NewFRA_reg_seasonal.norm)
+
+Species_VPUE_sptl_NewFRA_reg_seasonal.scen$METIER <- paste0(Species_VPUE_sptl_NewFRA_reg_seasonal.scen$METIER, "_newFRA.reg.se", sep="")
+
+VPUE_by_metier_species.NewFRA_reg_seasonal <- Species_VPUE_sptl_NewFRA_reg_seasonal.scen %>%
+  group_by(TAXON_GROUP_NAME, YEAR, MONTH, METIER) %>%
+  summarise(VPUE = mean(VPUE, na.rm=T), .groups="keep") %>%
+  ungroup()
+
+```
+
+## Northward expansion of the FRA (permanent)
+
+Recall this is applied only OTT and OTB and is closed from January to December.
+
+```{r north.west.FRA.expand.perm}
+
+# Create a vector of months spatial closure is applied
+NewFRA_reg_allYear_temporal <- c(1:12)
+
+# Create a vector of gears applicable to the spatial closure 
+NewFRA_reg_allYear_target_gear <- c("OTT","OTB")
+
+# Isolate sequences that fall within the months and gears applied above
+NewFRA_reg_allYear_overlap.points <- subset(Species_VPUE_sptl, subset = MONTH
+                                            %in% NewFRA_reg_allYear_temporal &
+                                              GEAR_LABEL %in% NewFRA_reg_allYear_target_gear)
+
+class(NewFRA_reg_allYear_overlap.points)
+
+# Find all fishing points from the isolated sequences that fall within the spatial closure definitions
+NewFRA_reg_allYear_inside <- NewFRA_reg_allYear_overlap.points[NewFRA_regulation,]
+
+dim(NewFRA_reg_allYear_inside)
+# [1] 15897    13
+
+# Because we do not want to include zeros in the average, set catch weight to zero for the cells
+NewFRA_reg_allYear_inside$VPUE <- NA
+
+NewFRA_reg_allYear_inside.FIDs <- sort(as.vector(NewFRA_reg_allYear_inside$FID))
+
+NewFRA_reg_allYear_inside <- NewFRA_reg_allYear_inside %>%
+  mutate(LON = unlist(map(NewFRA_reg_allYear_inside$geometry,1)), 
+         LAT = unlist(map(NewFRA_reg_allYear_inside$geometry,2))) %>%
+  st_drop_geometry()
+
+Species_VPUE_sptl_NewFRA_reg_allYear.norm <- Species_VPUE_sptl %>%
+  mutate(LON = unlist(map(Species_VPUE_sptl$geometry,1)), 
+         LAT = unlist(map(Species_VPUE_sptl$geometry,2))) %>%
+  st_drop_geometry() %>%
+  filter(!FID %in% NewFRA_reg_allYear_inside.FIDs)
+
+Species_VPUE_sptl_NewFRA_reg_allYear.scen <- rbind(NewFRA_reg_allYear_inside,Species_VPUE_sptl_NewFRA_reg_allYear.norm)
+
+Species_VPUE_sptl_NewFRA_reg_allYear.scen$METIER <- paste0(Species_VPUE_sptl_NewFRA_reg_allYear.scen$METIER, "_newFRA.reg.yr", sep="")
+
+VPUE_by_metier_species.NewFRA_reg_allYear <- Species_VPUE_sptl_NewFRA_reg_allYear.scen %>%
+  group_by(TAXON_GROUP_NAME, YEAR, MONTH, METIER) %>%
+  summarise(VPUE = mean(VPUE, na.rm=T), .groups="keep") %>%
+  ungroup()
+
+```
+
+## 90-100m isobath closure (seasonal)
+
+Recall this is applied only OTT and OTB and is closed from September to April.
+
+```{r 90.100.m.iso.seas}
+
+New90_100_isobath_seasonal_temporal <- c(9:12,1:4)
+
+New90_100_isobath_seasonal_target_gear <- c("OTT","OTB")
+
+New90_100_isobath_seasonal_overlap.points <- 
+  subset(Species_VPUE_sptl, subset = MONTH %in%
+           New90_100_isobath_seasonal_temporal & GEAR_LABEL %in%
+           New90_100_isobath_seasonal_target_gear)
+
+class(New90_100_isobath_seasonal_overlap.points)
+
+New90_100_isobath_seasonal_inside <- New90_100_isobath_seasonal_overlap.points[New90_100_isobath_regulation,]
+
+dim(New90_100_isobath_seasonal_inside)
+# [1] 61127    13
+
+New90_100_isobath_seasonal_inside$VPUE <- NA
+
+New90_100_isobath_seasonal_inside.FIDs <- sort(as.vector(New90_100_isobath_seasonal_inside$FID))
+
+New90_100_isobath_seasonal_inside <- New90_100_isobath_seasonal_inside %>%
+  mutate(LON = unlist(map(New90_100_isobath_seasonal_inside$geometry,1)), 
+         LAT = unlist(map(New90_100_isobath_seasonal_inside$geometry,2))) %>%
+  st_drop_geometry()
+
+Species_VPUE_sptl_New90_100_isobath_seasonal.norm <- Species_VPUE_sptl %>% 
+  mutate(LON = unlist(map(Species_VPUE_sptl$geometry,1)), 
+         LAT = unlist(map(Species_VPUE_sptl$geometry,2))) %>%
+  st_drop_geometry() %>%
+  filter(!FID %in% New90_100_isobath_seasonal_inside.FIDs)
+
+Species_VPUE_sptl_New90_100_isobath_seasonal.scen <- rbind(New90_100_isobath_seasonal_inside,Species_VPUE_sptl_New90_100_isobath_seasonal.norm)
+
+Species_VPUE_sptl_New90_100_isobath_seasonal.scen$METIER <- paste0(Species_VPUE_sptl_New90_100_isobath_seasonal.scen$METIER, "_iso.se", sep="")
+
+VPUE_by_metier_species.New90_100_isobath_seasonal <- Species_VPUE_sptl_New90_100_isobath_seasonal.scen %>%
+  group_by(TAXON_GROUP_NAME, YEAR, MONTH, METIER) %>%
+  summarise(VPUE = mean(VPUE, na.rm=T), .groups="keep") %>%
+  ungroup()
+
+unique(is.na(VPUE_by_metier_species.New90_100_isobath_seasonal))
+
+# View(VPUE_by_metier_species.New90_100_isobath_seasonal)
+
+```
+
+## 90-100m isobath closure (permanent)
+
+Recall this is applied only OTT and OTB and is closed from September to April
+
+```{r 90.100.m.iso.perm}
+
+New90_100_isobath_allYear_temporal <- c(1:12)
+
+New90_100_isobath_allYear_target_gear <- c("OTT","OTB")
+
+New90_100_isobath_allYear_overlap.points <- 
+  subset(Species_VPUE_sptl, subset = MONTH %in%
+           New90_100_isobath_allYear_temporal & GEAR_LABEL %in%
+           New90_100_isobath_allYear_target_gear)
+
+class(New90_100_isobath_allYear_overlap.points)
+
+New90_100_isobath_allYear_inside <- New90_100_isobath_allYear_overlap.points[New90_100_isobath_regulation,]
+
+dim(New90_100_isobath_allYear_inside)
+# [1] 96689    13
+
+New90_100_isobath_allYear_inside$VPUE <- NA
+
+New90_100_isobath_allYear_inside.FIDs <- sort(as.vector(New90_100_isobath_allYear_inside$FID))
+
+New90_100_isobath_allYear_inside <- New90_100_isobath_allYear_inside %>% 
+  mutate(LON = unlist(map(New90_100_isobath_allYear_inside$geometry,1)), 
+         LAT = unlist(map(New90_100_isobath_allYear_inside$geometry,2))) %>%
+  st_drop_geometry()
+
+Species_VPUE_sptl_New90_100_isobath_allYear.norm <- Species_VPUE_sptl %>% 
+  mutate(LON = unlist(map(Species_VPUE_sptl$geometry,1)), 
+         LAT = unlist(map(Species_VPUE_sptl$geometry,2))) %>%
+  st_drop_geometry() %>%
+  filter(!FID %in% New90_100_isobath_allYear_inside.FIDs)
+
+Species_VPUE_sptl_New90_100_isobath_allYear.scen <-
+  rbind(New90_100_isobath_allYear_inside,Species_VPUE_sptl_New90_100_isobath_allYear.norm)
+
+Species_VPUE_sptl_New90_100_isobath_allYear.scen$METIER <- paste0(Species_VPUE_sptl_New90_100_isobath_allYear.scen$METIER, "_iso.yr", sep="")
+
+VPUE_by_metier_species.New90_100_isobath_allYear <- Species_VPUE_sptl_New90_100_isobath_allYear.scen %>%
+  group_by(TAXON_GROUP_NAME, YEAR, MONTH, METIER) %>%
+  summarise(VPUE = mean(VPUE, na.rm=T), .groups="keep") %>%
+  ungroup()
+
+```
+
+## Offshort closures (seasonal)
+
+Recall this is applies to all bottom gears: OTT, OTB, GNS, GTR, LLS, LTR and has three permanent closures (permanent) with a seasonal closure connecting the three zones "connectivity" from closed from October 15th to December 15th. The model closes for two months (October and November starting on the first of the month).
+
+```{r offshort.closure.seas}
+
+# For the permanent closure zones
+
+Offshore_permanent_temporal <- c(1:12)
+
+Offshore_permanent_overlap.points <- 
+  subset(Species_VPUE_sptl, subset = MONTH %in% Offshore_permanent_temporal &
+           GEAR_LABEL != "OTM")
+
+class(Offshore_permanent_overlap.points)
+
+Offshore_permanent_inside <- Offshore_permanent_overlap.points[Offshore_permanent_spdf,]
+
+Offshore_permanent_inside$VPUE <- NA
+
+Offshore_permanent_inside.FIDs <- sort(as.vector(Offshore_permanent_inside$FID))
+
+Offshore_permanent_inside <- Offshore_permanent_inside %>% 
+  mutate(LON = unlist(map(Offshore_permanent_inside$geometry,1)), 
+         LAT = unlist(map(Offshore_permanent_inside$geometry,2))) %>%
+  st_drop_geometry()
+
+Species_VPUE_sptl_Offshore_permanent.norm <- Species_VPUE_sptl %>% 
+  mutate(LON = unlist(map(Species_VPUE_sptl$geometry,1)), 
+         LAT = unlist(map(Species_VPUE_sptl$geometry,2))) %>%
+  st_drop_geometry() %>%
+  filter(!FID %in% Offshore_permanent_inside.FIDs)
+
+Species_VPUE_sptl_Offshore_permanent.temp <-
+  rbind(Offshore_permanent_inside,Species_VPUE_sptl_Offshore_permanent.norm)
+
+#-------------------------------------------------------------------------
+# For the seasonal connectivity area joining those three zones
+
+Offshore_connectivity_seasonal_temporal <- c(10:11)
+
+Offshore_connectivity_seasonal_overlap.points <- 
+  subset(Species_VPUE_sptl, subset = MONTH %in%
+           Offshore_connectivity_seasonal_temporal & GEAR_LABEL != "OTM")
+
+class(Offshore_connectivity_seasonal_overlap.points)
+
+Offshore_connectivity_seasonal_inside <- Offshore_connectivity_seasonal_overlap.points[Offshore_closures.connec_final,]
+
+Offshore_connectivity_seasonal_inside$VPUE <- NA
+
+Offshore_connectivity_seasonal_inside.FIDs <- sort(as.vector(Offshore_connectivity_seasonal_inside$FID))
+
+Offshore_connectivity_seasonal_inside <- Offshore_connectivity_seasonal_inside %>% 
+  mutate(LON = unlist(map(Offshore_connectivity_seasonal_inside$geometry,1)), 
+         LAT = unlist(map(Offshore_connectivity_seasonal_inside$geometry,2))) %>%
+  st_drop_geometry()
+
+Species_VPUE_sptl_Offshore_connectivity_seasonal.norm <- Species_VPUE_sptl %>% 
+  mutate(LON = unlist(map(Species_VPUE_sptl$geometry,1)), 
+         LAT = unlist(map(Species_VPUE_sptl$geometry,2))) %>%
+  st_drop_geometry() %>%
+  filter(!FID %in% Offshore_connectivity_seasonal_inside.FIDs)
+
+Species_VPUE_sptl_Offshore_connectivity_seasonal.temp <-
+  rbind(Offshore_connectivity_seasonal_inside,Species_VPUE_sptl_Offshore_connectivity_seasonal.norm)
+
+#-------------------------------------------------------------------------
+# Joining the two 
+
+Species_VPUE_sptl_Offshore_seasonal.scen <-
+  rbind(Species_VPUE_sptl_Offshore_permanent.temp,
+        Species_VPUE_sptl_Offshore_connectivity_seasonal.temp)
+
+Species_VPUE_sptl_Offshore_seasonal.scen$METIER <- paste0(Species_VPUE_sptl_Offshore_seasonal.scen$METIER, "_offshore.se")
+
+VPUE_by_metier_species.Offshore_seasonal <- Species_VPUE_sptl_Offshore_seasonal.scen %>%
+  group_by(TAXON_GROUP_NAME, YEAR, MONTH, METIER) %>%
+  summarise(VPUE = mean(VPUE, na.rm=T), .groups="keep") %>%
+  ungroup()
+
+```
+
+## Offshort closures (permanent)
+
+Recall this is applies to all bottom gears: OTT, OTB, GNS, GTR, LLS, LTR and has three permanent closures (allYear) with a seasonal closure connecting the three zones "connectivity" from closed from October 15th to December December 15th. The model closes for two months (October and November starting on the first of the month).
+
+```{r offshort.closure.perm}
+
+# For the permanent closure zones
+
+Offshore_permanent_temporal <- c(1:12)
+
+Offshore_permanent_overlap.points <- 
+  subset(Species_VPUE_sptl, subset = MONTH %in% Offshore_permanent_temporal &
+           GEAR_LABEL != "OTM")
+
+class(Offshore_permanent_overlap.points)
+
+Offshore_permanent_inside <- Offshore_permanent_overlap.points[Offshore_permanent_spdf,]
+
+Offshore_permanent_inside$VPUE <- NA
+
+Offshore_permanent_inside.FIDs <- sort(as.vector(Offshore_permanent_inside$FID))
+
+Offshore_permanent_inside <- Offshore_permanent_inside %>% 
+  mutate(LON = unlist(map(Offshore_permanent_inside$geometry,1)), 
+         LAT = unlist(map(Offshore_permanent_inside$geometry,2))) %>%
+  st_drop_geometry()
+
+Species_VPUE_sptl_Offshore_permanent.norm <- Species_VPUE_sptl %>% 
+  mutate(LON = unlist(map(Species_VPUE_sptl$geometry,1)), 
+         LAT = unlist(map(Species_VPUE_sptl$geometry,2))) %>%
+  st_drop_geometry() %>%
+  filter(!FID %in% Offshore_permanent_inside.FIDs)
+
+Species_VPUE_sptl_Offshore_permanent.temp <-
+  rbind(Offshore_permanent_inside,Species_VPUE_sptl_Offshore_permanent.norm)
+
+#-------------------------------------------------------------------------
+# For the permanent closure of connectivity area that join those three zones
+
+Offshore_connectivity_allYear_temporal <- c(1:12)
+
+Offshore_connectivity_allYear_overlap.points <- 
+  subset(Species_VPUE_sptl, subset = MONTH %in%
+           Offshore_connectivity_allYear_temporal & GEAR_LABEL != "OTM")
+
+class(Offshore_connectivity_allYear_overlap.points)
+
+Offshore_connectivity_allYear_inside <- Offshore_connectivity_allYear_overlap.points[Offshore_closures.connec_final,]
+
+Offshore_connectivity_allYear_inside$VPUE <- NA
+
+Offshore_connectivity_allYear_inside.FIDs <- sort(as.vector(Offshore_connectivity_allYear_inside$FID))
+
+Offshore_connectivity_allYear_inside <- Offshore_connectivity_allYear_inside %>% 
+  mutate(LON = unlist(map(Offshore_connectivity_allYear_inside$geometry,1)), 
+         LAT = unlist(map(Offshore_connectivity_allYear_inside$geometry,2))) %>%
+  st_drop_geometry()
+
+Species_VPUE_sptl_Offshore_connectivity_allYear.norm <- Species_VPUE_sptl %>% 
+  mutate(LON = unlist(map(Species_VPUE_sptl$geometry,1)), 
+         LAT = unlist(map(Species_VPUE_sptl$geometry,2))) %>%
+  st_drop_geometry() %>%
+  filter(!FID %in% Offshore_connectivity_allYear_inside.FIDs)
+
+Species_VPUE_sptl_Offshore_connectivity_allYear.temp <-
+  rbind(Offshore_connectivity_allYear_inside,Species_VPUE_sptl_Offshore_connectivity_allYear.norm)
+
+#-------------------------------------------------------------------------
+# Joining the two 
+
+Species_VPUE_sptl_Offshore_allYear.scen <-
+  rbind(Species_VPUE_sptl_Offshore_permanent.temp,
+        Species_VPUE_sptl_Offshore_connectivity_allYear.temp)
+
+Species_VPUE_sptl_Offshore_allYear.scen$METIER <- paste0(Species_VPUE_sptl_Offshore_allYear.scen$METIER, "_offshore.yr", sep="")
+
+VPUE_by_metier_species.Offshore_allYear <- Species_VPUE_sptl_Offshore_allYear.scen  %>%
+  group_by(TAXON_GROUP_NAME, YEAR, MONTH, METIER) %>%
+  summarise(VPUE = mean(VPUE, na.rm=T), .groups="keep") %>%
+  ungroup()
+
+```
+
+## Combined spatial effects with 90-100 isobath closure (seasonal)
+
+Under this scenario, the combined effects of all seasonal closures are investigated. Recall that the offshore permanent closure zones still apply to all bottom gears: OTT, OTB, GNS, GTR, LLS, LTR and the "connectivity" zone is closed from October to December.
+
+```{r combi.sptl.w.iso.seas}
+
+Species_VPUE_sptl_combined_spatial_with90_100isobaths_seasonal.scen <-
+  rbind(Species_VPUE_sptl_NewFRA_reg_seasonal.scen,
+        Species_VPUE_sptl_New90_100_isobath_seasonal.scen,
+        Species_VPUE_sptl_Offshore_seasonal.scen)
+
+Species_VPUE_sptl_combined_spatial_with90_100isobaths_seasonal.scen$METIER <-
+  sub("_newFRA.reg.se(.*)", "_csptl.w.iso.se",
+      Species_VPUE_sptl_combined_spatial_with90_100isobaths_seasonal.scen$METIER)
+
+Species_VPUE_sptl_combined_spatial_with90_100isobaths_seasonal.scen$METIER <-
+  sub("_iso.se(.*)", "_csptl.w.iso.se",
+      Species_VPUE_sptl_combined_spatial_with90_100isobaths_seasonal.scen$METIER)
+
+Species_VPUE_sptl_combined_spatial_with90_100isobaths_seasonal.scen$METIER <-
+  sub("_offshore.se(.*)", "_csptl.w.iso.se",
+      Species_VPUE_sptl_combined_spatial_with90_100isobaths_seasonal.scen$METIER)
+
+VPUE_by_metier_species.combined_spatial_with90_100isobaths_seasonal <-
+  Species_VPUE_sptl_combined_spatial_with90_100isobaths_seasonal.scen %>%
+  group_by(TAXON_GROUP_NAME, YEAR, MONTH, METIER) %>%
+  summarise(VPUE = mean(VPUE, na.rm=T), .groups="keep") %>%
+  ungroup()
+
+```
+
+## Combined spatial effects without 90-100 isobath closure (seasonal)
+
+Under this scenario, the combined effects of all seasonal closures are investigated. Recall that the offshore permanent closure zones still apply to all bottom gears: OTT, OTB, GNS, GTR, LLS, LTR and the "connectivity" zone is closed from October to December. This will be the same for scenarios targeting only trawlers or all gears because only effort is different. Note that only seasonal closures are investigated in these scenarios.
+
+```{r combi.sptl.wo.iso.seas}
+
+Species_VPUE_sptl_combined_spatial_without90_100isobaths_seasonal.scen <-
+  rbind(Species_VPUE_sptl_NewFRA_reg_seasonal.scen,
+        Species_VPUE_sptl_Offshore_seasonal.scen)
+
+Species_VPUE_sptl_combined_spatial_without90_100isobaths_seasonal.scen$METIER <-
+  sub("_newFRA.reg.se(.*)", "_csptl.wo.iso.se",
+      Species_VPUE_sptl_combined_spatial_without90_100isobaths_seasonal.scen$METIER)
+
+Species_VPUE_sptl_combined_spatial_without90_100isobaths_seasonal.scen$METIER <-
+  sub("_offshore.se(.*)", "_csptl.wo.iso.se",
+      Species_VPUE_sptl_combined_spatial_without90_100isobaths_seasonal.scen$METIER)
+
+VPUE_by_metier_species.combined_spatial_without90_100isobaths_seasonal <-
+  Species_VPUE_sptl_combined_spatial_without90_100isobaths_seasonal.scen %>%
+  group_by(TAXON_GROUP_NAME, YEAR, MONTH, METIER) %>%
+  summarise(VPUE = mean(VPUE, na.rm=T), .groups="keep") %>%
+  ungroup()
+
+```
+
+## Combined spatial effects with 90-100 isobath closure (permanent)
+
+Under this scenario, the combined effects of all permanent closures are investigated. Recall that the offshore permanent closure zones still apply to all bottom gears: OTT, OTB, GNS, GTR, LLS, LTR. This will be the same for scenarios targeting only trawlers or all gears because only effort is different. Note that only seasonal closures are investigated in these scenarios.
+
+```{r combi.sptl.effort.w.iso.perm}}
+
+Species_VPUE_sptl_combined_spatial_with90_100isobaths_allYear.scen <-
+  rbind(Species_VPUE_sptl_NewFRA_reg_allYear.scen,
+        Species_VPUE_sptl_New90_100_isobath_allYear.scen,
+        Species_VPUE_sptl_Offshore_allYear.scen)
+
+Species_VPUE_sptl_combined_spatial_with90_100isobaths_allYear.scen$METIER <-
+  sub("_newFRA.reg.yr(.*)", "_csptl.w.iso.yr",
+      Species_VPUE_sptl_combined_spatial_with90_100isobaths_allYear.scen$METIER)
+
+Species_VPUE_sptl_combined_spatial_with90_100isobaths_allYear.scen$METIER <-
+  sub("_iso.yr(.*)", "_csptl.w.iso.yr",
+      Species_VPUE_sptl_combined_spatial_with90_100isobaths_allYear.scen$METIER)
+
+Species_VPUE_sptl_combined_spatial_with90_100isobaths_allYear.scen$METIER <-
+  sub("_offshore.yr(.*)", "_csptl.w.iso.yr",
+      Species_VPUE_sptl_combined_spatial_with90_100isobaths_allYear.scen$METIER)
+
+VPUE_by_metier_species.combined_spatial_with90_100isobaths_allYear <-
+  Species_VPUE_sptl_combined_spatial_with90_100isobaths_allYear.scen %>%
+  group_by(TAXON_GROUP_NAME, YEAR, MONTH, METIER) %>%
+  summarise(VPUE = mean(VPUE, na.rm=T), .groups="keep") %>%
+  ungroup()
+
+```
+
+## Combined spatial effects without 90-100 isobath closure (permanent)
+
+Under this scenario, the combined effects of all permanent closures are investigated. Recall that the offshore permanent closure zones still apply to all bottom gears: OTT, OTB, GNS, GTR, LLS, LTR and the "connectivity" zone is closed from October to December. This will be the same for scenarios targeting only trawlers or all gears because only effort is different. Note that only seasonal closures are investigated in these scenarios.
+
+```{r combi.sptl.effort.wo.iso.perm}
+
+Species_VPUE_sptl_combined_spatial_without90_100isobaths_allYear.scen <-
+  rbind(Species_VPUE_sptl_NewFRA_reg_allYear.scen,
+        Species_VPUE_sptl_Offshore_allYear.scen)
+
+Species_VPUE_sptl_combined_spatial_without90_100isobaths_allYear.scen$METIER <-
+  sub("_newFRA.reg.yr(.*)", "_csptl.wo.iso.yr",
+      Species_VPUE_sptl_combined_spatial_without90_100isobaths_allYear.scen$METIER)
+
+Species_VPUE_sptl_combined_spatial_without90_100isobaths_allYear.scen$METIER <-
+  sub("_offshore.yr(.*)", "_csptl.wo.iso.yr",
+      Species_VPUE_sptl_combined_spatial_without90_100isobaths_allYear.scen$METIER)
+
+VPUE_by_metier_species.combined_spatial_without90_100isobaths_allYear <-
+  Species_VPUE_sptl_combined_spatial_without90_100isobaths_allYear.scen %>%
+  group_by(TAXON_GROUP_NAME, YEAR, MONTH, METIER) %>%
+  summarise(VPUE = mean(VPUE, na.rm=T), .groups="keep") %>%
+  ungroup()
+
+```
+
+## Effort and seasonal closure effects with 90-100 isobath closure
+
+This will be the same for scenarios targeting only trawlers or all gears because only effort is different. Note that only seasonal closures are investigated in these scenarios.
+
+```{r combi.sptl.effort.w.iso.seas}
+
+Species_VPUE_sptl_effort_combined_spatial_with90_100isobaths.scen <-
+  Species_VPUE_sptl_combined_spatial_with90_100isobaths_seasonal.scen
+
+Species_VPUE_sptl_effort_combined_spatial_with90_100isobaths.scen$METIER <-
+  sub("_csptl.w.iso.se(.*)", "_effort.csptl.w.iso",
+      Species_VPUE_sptl_effort_combined_spatial_with90_100isobaths.scen$METIER)
+
+VPUE_by_metier_species.effort_combined_spatial_with90_100isobaths.scen <-
+  Species_VPUE_sptl_effort_combined_spatial_with90_100isobaths.scen %>%
+  group_by(TAXON_GROUP_NAME, YEAR, MONTH, METIER) %>%
+  summarise(VPUE = mean(VPUE, na.rm=T), .groups="keep") %>%
+  ungroup()
+
+```
+
+## Effort and seasonal closure effects without 90-100 isobath closure
+
+This will be the same for scenarios targeting only trawlers or all gears because only effort is different. Note that only seasonal closures are investigated in these scenarios.
+
+```{r combi.sptl.effort.wo.iso.seas}
+
+Species_VPUE_sptl_effort_combined_spatial_without90_100isobaths.scen <-
+  Species_VPUE_sptl_combined_spatial_without90_100isobaths_seasonal.scen
+
+Species_VPUE_sptl_effort_combined_spatial_without90_100isobaths.scen$METIER <-
+  sub("_csptl.wo.iso.se(.*)", "_effort.csptl.wo.iso",
+      Species_VPUE_sptl_effort_combined_spatial_without90_100isobaths.scen$METIER)
+
+VPUE_by_metier_species.effort_combined_spatial_without90_100isobaths.scen <-
+  Species_VPUE_sptl_effort_combined_spatial_without90_100isobaths.scen %>%
+  group_by(TAXON_GROUP_NAME, YEAR, MONTH, METIER) %>%
+  summarise(VPUE = mean(VPUE, na.rm=T), .groups="keep") %>%
+  ungroup()
+
+```
+
+## Combine all spatial outputs
+
+```{r VPUE.merge}
+
+scenario_VPUE_calc <- 
+  rbind(VPUE_by_metier_species_nonsptl,
+        VPUE_by_metier_species.FRA,
+        VPUE_by_metier_species.NewFRA_reg_seasonal,
+        VPUE_by_metier_species.NewFRA_reg_allYear,
+        VPUE_by_metier_species.New90_100_isobath_seasonal,
+        VPUE_by_metier_species.New90_100_isobath_allYear,
+        VPUE_by_metier_species.Offshore_seasonal,
+        VPUE_by_metier_species.Offshore_allYear, 
+        VPUE_by_metier_species.combined_spatial_with90_100isobaths_seasonal,
+        VPUE_by_metier_species.combined_spatial_without90_100isobaths_seasonal,
+        VPUE_by_metier_species.combined_spatial_with90_100isobaths_allYear,
+        VPUE_by_metier_species.combined_spatial_without90_100isobaths_allYear,
+        VPUE_by_metier_species.effort_combined_spatial_with90_100isobaths.scen, 
+        VPUE_by_metier_species.effort_combined_spatial_without90_100isobaths.scen)
+
+colnames(scenario_VPUE_calc)
+
+dim(scenario_VPUE_calc)
+# [1] 34050   5
+
+dim(distinct(scenario_VPUE_calc))
+# [1] 34050   5
+
+unique(scenario_VPUE_calc$YEAR)
+
+# View(scenario_VPUE_calc)
+
+```
+
+# Isolate 2017 non-spatial data and extend to include years 2018 and 2019
+
+Note that scenario measures do not take effect until 2020 so we need to use the non-spatial closure data values. Only Year 2017 is used because this is the most up to data economic information available for the time being.
+
+```{r extend.2018.2019}
+
+scenario_VPUE_calc <- fread(paste(path, "Data/Revenues/scenario_VPUE_calc.csv", sep=""),
+                            sep = ";")
+
+years2015_2016 <- scenario_VPUE_calc %>% 
+  filter(YEAR < 2017)
+
+dim(distinct(years2015_2016))
+# [1] 4020     5
+
+# Extend to include years 2018 and 2019
+remaining_years <- scenario_VPUE_calc %>%
+  filter(YEAR == 2017)
+
+dim(distinct(remaining_years))
+# [1] 30030     5
+
+unique(is.na(remaining_years))
+
+# Copy all values without spatial closures twice for years 2018 and 2019
+remaining_years_non_sptl.rep <- remaining_years %>%
+  slice(rep(1:n(), each = 2))
+
+dim(remaining_years_non_sptl.rep)
+# [1] 60060    6
+
+# Rename YEARS
+remaining_years_non_sptl.rep$YEAR <- rep_len(seq(2018,2019,1), length.out=60060)
+
+unique(remaining_years_non_sptl.rep$YEAR)
+
+# Merge back together
+Remaining_VPUEs <- rbind(remaining_years, remaining_years_non_sptl.rep)
+
+VPUEs2015_2019 <- rbind(Remaining_VPUEs, years2015_2016)
+
+# View(VPUEs2015_2019)
+
+summary(VPUEs2015_2019)
+
+sort(unique(VPUEs2015_2019$YEAR))
+
+```
+
+# Apply spatial closure scenarios to projected years 2020 to 2024
+
+```{r extend.2020.2024}
+
+dim(scenario_VPUE_calc)
+# [1] 34050     5
+
+dim(distinct(scenario_VPUE_calc))
+# [1] 34050     5
+
+# Copy all values without spatial closures twice for years 2020 to 2024
+management_years <- scenario_VPUE_calc %>% slice(rep(1:n(), each = 5))
+
+dim(management_years)
+# [1] 170250    5
+
+# Rename YEARS
+management_years$YEAR <- rep_len(seq(2020,2024,1), length.out = 170250)
+
+unique(management_years$YEAR)
+
+```
+
+# Join all years
+
+```{r Final.VPUE.values}
+
+Final_VPUEs_V2 <- rbind(VPUEs2015_2019, management_years)
+
+dim(Final_VPUEs_V2)
+# [1] 264360    5
+
+Final_VPUEs_V2_distinct <- distinct(Final_VPUEs_V2)
+
+dim(Final_VPUEs_V2_distinct)
+# [1] 264360    5
+
+fwrite(Final_VPUEs_V2, paste(path, 'Data/Revenues/Final_VPUEs.csv', sep=""), row.names = F, sep = ";")
+
+```
+
