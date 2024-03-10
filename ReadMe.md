@@ -15,7 +15,7 @@ Description
 
 This is the working repository for the fishereis dynamic model MEDISIS, which is written in java and R programming (RMarkdown) languages. The data and codes provided here correspond to the Fisheries Research publication:
 
-Hopkins Stephanie C., Lehuta Sigrid, Mahevas Stephanie, Vaz Sandrine (2024). Trade-offs between spatio-temporal closures and effort reduction measures to ensure fisheries sustainability. Fish. Res.
+Hopkins Stephanie C., Lehuta Sigrid, Mahevas Stephanie, Vaz Sandrine (2024). Trade-offs between spatial temporal closures and effort reduction measures to ensure fisheries sustainability. Fish. Res.
 
 and the SEANOE data record: 
 
