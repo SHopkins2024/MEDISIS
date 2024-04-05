@@ -1,0 +1,1063 @@
+---
+title: "RevisedPECHALO boxplot rank UNCERTAINTY"
+author: "Stephanie Hopkins"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document:
+    toc: TRUE
+---
+
+```{r setup, include=FALSE}
+
+rm(list = ls())
+gc()
+
+knitr::opts_chunk$set(echo=TRUE)
+knitr::opts_chunk$set(message=FALSE)
+
+list.of.packages <- c("data.table","tidyverse","cowplot", "ggrepel","scales","reshape2", "car","Hmisc")
+
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+
+library(ggrepel)
+library(cowplot)
+library(tidyverse)
+library(data.table)
+library(scales)
+library(reshape2)
+library(car)
+library(Hmisc)
+
+# To Replace with your file directory
+dir <- "C:/Users/steph/Documents"
+
+MEDISIS <- "/MEDISIS/Part2.Analysing.the.simulation.output/"
+
+path <- paste(dir,MEDISIS,sep="")
+
+```
+
+The following code is broken into main subject: effects on catch weight, effects on biomass, and effects on revenues.
+
+# Make your life easy and save custom themes
+
+```{r}
+
+bar_chart_text_theme <- theme(axis.title.x = element_text(margin=margin(t=5,r=0,b=0,l=0), size = 14), axis.text.y = element_text(margin=margin(t=0,r=1,b=0,l=0), size = 12), axis.text.x.bottom = element_text(margin=margin(t=1,r=0,b=0,l=0), size = 12), axis.title.y = element_text(size = 14), strip.text = element_text(size=12), panel.spacing = unit(0.5, "cm")) 
+
+bar_chart_legend_theme <- theme(legend.title = element_blank(), legend.text = element_text(size = 12),legend.text.align = 0, legend.direction = "horizontal", legend.spacing = unit(0.001, 'cm'), legend.key.height = unit(1.52, 'cm'), legend.key.width = unit(1.5, 'cm'), legend.position="bottom")
+
+```
+
+# Make simulation design table
+
+```{r}
+
+simuDesign <- '/MEDISIS/Part1.Reproducing.the.simulation.data/ISIS.Fish.Input.Tables/simulation_design_28'
+
+simulationDesign <- fread(paste(dir, simuDesign,".csv", sep=""), sep=';', h=F)
+
+colnames(simulationDesign) =  c('InitialAbundance','Recruitment','Connectivity','Scenarios')
+
+simulationDesign$simu <- seq(0, 503, 1)
+
+table_Sce_6.4 <- data.frame(Scenarios=as.character(c(0:27)),SceName=c("StatusQuo","Trawler_30_Red","Trawler_40_Red","Trawler_50_Red","Trawler_10_20_30","Trawler_10_17.5_25_32.5_40","Trawler_10_20_30_40_50","AllGears_30_Red","AllGears_40_Red","AllGears_50_Red","AllGears_10_20_30","AllGears_10_17.5_25_32.5_40","AllGears_10_20_30_40_50","Original_FRA_allYear","Northward_Expansion_of_FRA_Season","Northward_Expansion_of_FRA_allYear","90-100_Isobaths_Closure_Season","90-100_Isobaths_Closure_allYear","Offshore_Closures_Season","Offshore_Closures_allYear","Northward_Expansion_of_FRA_90-100m_Offshore_Closures_Combined","Northward_Expansion_of_FRA_90-100m_Offshore_allYear_Closures_Combined","Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures","Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures_allGears","Northward_Expansion_of_FRA_Offshore_Closures_Combined","Northward_Expansion_of_FRA_Offshore_allYear_Closures_Combined","Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures","Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures_allGears"))
+
+```
+
+# For catch weight
+
+## Load data
+
+```{r catch.weight, echo=TRUE}
+
+name_RData_6.4 <- 'catchWgtot_6.4_without-0s'
+
+catchWgtot_6.4 <- fread(paste(path, "Data/", name_RData_6.4,'.csv',sep=''))
+
+dim(catchWgtot_6.4)
+# [1] 14754096  8
+
+nameRDATA_clean <- 'catchWgtot_6.4_true_0s'
+
+catchWgtot_6.4_matched <-fread(paste(path, "Data/", nameRDATA_clean,'.csv',sep=''))
+
+dim(catchWgtot_6.4_matched)
+# [1] 9921744 8
+
+catchWgtot_6.4 <- rbind(catchWgtot_6.4, catchWgtot_6.4_matched)
+
+rm(catchWgtot_6.4_matched)
+
+```
+
+## Join the simulation design table to the simulation output
+
+Apply the names of the Scenarios in the column designating their numeric values and and graft this to the RData.
+
+```{r simulation.bind.catch, echo=TRUE}
+
+step <- unique(catchWgtot_6.4$step)
+nbYear <- length(step)/12 
+YEAR <- sort(rep(seq(2015,2014+nbYear,1), 12))
+MONTH <- rep(seq(1,12,1),nbYear)
+tabStep <- data.frame(step, YEAR, MONTH)
+
+catchWgtot_6.4 <- inner_join(catchWgtot_6.4, tabStep, by=c('step'))
+catchWgtot_6.4 <- inner_join(catchWgtot_6.4, simulationDesign, by=c('simu'))
+
+```
+
+## Filter data
+
+Note that while we parametrise OTB_XST_18-24 and OTM_CMT_18-24 in ISIS-Fish, these are not active metier or they do not target hake.
+
+```{r filter.catch, echo=TRUE}
+
+catchWgtot_6.4 <- subset(catchWgtot_6.4, !metier %in% c("OTB_XST_18-24","OTM_CMT_18-24"))
+
+dim(catchWgtot_6.4)
+# [1] 23224320  14
+
+```
+
+## Reference simulation
+
+This is essentially out base line values for each scenario. Therefore, InitialAbundance = 0, Recruitment = 0, and Connectivity = 0. This will serve as a fishing as normal scenario with no assumptions.
+
+```{r key.binding.catch, echo=TRUE}
+
+# For Catch Weight:
+catch_year <- setNames(aggregate(value~YEAR+simu+InitialAbundance+Recruitment+Connectivity+Scenarios,data=catchWgtot_6.4,sum),c("YEAR","simu","InitialAbundance","Recruitment","Connectivity","Scenarios","Catch_wg"))
+
+# View(catch_year)
+
+catch_year$CombiSimu <- paste0("Init",catch_year$InitialAbundance,"_Recr",catch_year$Recruitment,"_Conn",catch_year$Connectivity,"_Scen",catch_year$Scenarios)
+
+catch_Ref <- catch_year[catch_year$CombiSimu=="Init0_Recr0_Conn0_Scen0",]
+
+catch_Ref <- as.data.frame(catch_Ref[,c("YEAR","Catch_wg")])
+
+names(catch_Ref)[2]<-"Catch_ref_wg"
+
+catch_Ref_value <- subset(catch_Ref, YEAR <= 2017)
+
+catch_Ref_value <- mean(catch_Ref_value$Catch_ref_wg)
+catch_Ref_value
+
+```
+
+## Compute reference value
+
+```{r catch.ref, echo=TRUE}
+
+catch_year_agg <- as.data.table(catch_year)
+
+catch_year_agg  <- catch_year_agg[,list(Catch_wg = sum(Catch_wg)), 
+                                  by = list(YEAR, simu, InitialAbundance,
+                                            Recruitment, Connectivity,
+                                            Scenarios)]
+
+# Calculate relative differences (in weight: Rel_Diff_wg)
+catch_year_agg$Rel_Diff_wg <- 
+  ((catch_year_agg$Catch_wg - catch_Ref_value) / catch_Ref_value) * 100
+
+catch_year_agg$Scenarios <- as.factor(as.numeric(catch_year_agg$Scenarios))
+
+catch_year_agg <- merge(catch_year_agg, table_Sce_6.4, by=c("Scenarios"))
+
+catch_year_agg$SceName <- factor(catch_year_agg$SceName, 
+                                 levels = table_Sce_6.4$SceName)
+
+# View(catch_year_agg)
+
+```
+
+## Calculate the scenario effect uncertainties
+
+Recall that there are 3 recruitment, 3 connectivity, and 2 initial abundance values (so 3x3x2 points for each scenario). The range will be 1 to 28. Ranks are determined based on the maximum relative difference value. Therefore the lowest value with have a Rank of 1. 
+
+```{r catch.rank.scen, echo=TRUE}
+
+catch_year_agg$CombiSimu <- paste0("Init", catch_year_agg$InitialAbundance,
+                                   "_Recr", catch_year_agg$Recruitment,"_Conn",
+                                   catch_year_agg$Connectivity)
+
+catchWgtot_rank2024 <- data.table()
+
+for (c in (1:length(unique(catch_year_agg$CombiSimu)))) { 
+  
+  # for each combination
+  catchWgtot_CombiSimu <- catch_year_agg[catch_year_agg$CombiSimu ==
+                                           unique(catch_year_agg$CombiSimu)[c],]
+  # for the last simulation year (2024)
+   catchWgtot_CombiSimu2024 <- 
+     catchWgtot_CombiSimu[catchWgtot_CombiSimu$YEAR == 2024, ]
+   
+   catchWgtot_CombiSimu2024$rank <- 
+     rank(catchWgtot_CombiSimu2024$Rel_Diff_wg, ties.method = "max")
+   
+   catchWgtot_CombiSimu2024 <-
+     as.data.frame(catchWgtot_CombiSimu2024[,c("SceName","Scenarios","rank")])
+   
+   catchWgtot_rank2024 <- rbind(catchWgtot_rank2024, catchWgtot_CombiSimu2024)
+}
+
+# View(catchWgtot_rank2024)
+
+```
+
+## Create groups by scenario type
+
+Here we use numbers instead of letters so that we can create a custom scale later on. These do not correspond to the scenario number rather the order in which to plot.
+
+```{r reorder.catch.scen, echo=TRUE}
+
+### Reorder the groups that we are interested in
+catchWgtot_rank2024_reorder <- 
+  catchWgtot_rank2024 %>% mutate(
+    SceName_short = 
+      recode_factor(SceName,
+                    "StatusQuo"= 1,
+                    "Trawler_30_Red"= 2,
+                    "AllGears_30_Red" = 3,
+                    "Trawler_40_Red" = 4,
+                    "AllGears_40_Red"= 5,
+                    "Trawler_50_Red"= 6,
+                    "AllGears_50_Red"= 7,
+                    "Trawler_10_20_30"= 8,
+                    "AllGears_10_20_30"= 9,
+                    "Trawler_10_17.5_25_32.5_40"= 10,
+                    "AllGears_10_17.5_25_32.5_40"= 11,
+                    "Trawler_10_20_30_40_50"= 12,
+                    "AllGears_10_20_30_40_50"= 13,
+                    "Original_FRA_allYear"= 14,
+                    "Northward_Expansion_of_FRA_Season"= 15,
+                    "Northward_Expansion_of_FRA_allYear" = 16,
+                    "90-100_Isobath_Closures_Season"= 17,
+                    "90-100_Isobaths_Closures_allYear"= 18, 
+                    "Offshore_Closures_Season"= 19,
+                    "Offshore_Closures_allYear"= 20,
+                    "Northward_Expansion_of_FRA_90-100m_Offshore_Closures_Combined"= 21,
+                    "Northward_Expansion_of_FRA_Offshore_Closures_Combined" = 22,
+                    "Northward_Expansion_of_FRA_90-100m_Offshore_allYear_Closures_Combined" = 23,
+                    "Northward_Expansion_of_FRA_Offshore_allYear_Closures_Combined"= 24,
+                    "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures"= 25,
+                    "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures"= 26,
+                    "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures_allGears"= 27,
+                    "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures_allGears"= 28
+                    ))
+
+```
+
+## Focusing only on base scenario effects, rank scenario simulations
+
+Here we are only interested in reference simulations (cad: Init=0, Rec=0, Conn=0)
+
+```{r set.catch.mean.base.reorder, echo=TRUE}
+
+catch_year_agg_baseScenEffects <- subset(catch_year_agg, 
+                                         CombiSimu == "Init0_Recr0_Conn0")
+
+# for the last simulation year (2024)
+catch_baseScenEffects_rank2024 <- catch_year_agg_baseScenEffects[catch_year_agg_baseScenEffects$YEAR == 2024, ]
+
+catch_baseScenEffects_rank2024$rank <- rank(catch_baseScenEffects_rank2024$Rel_Diff_wg, ties.method = "max")
+
+catch_baseScenEffects_rank2024 <- as.data.frame(catch_baseScenEffects_rank2024[,c("SceName","Scenarios","rank")])
+
+### Reorder the groups that we are interested in
+catch_baseScenEffects_rank2024_reorder <- 
+  catch_baseScenEffects_rank2024 %>% mutate(
+    SceName_short = 
+      recode_factor(SceName,
+                    "StatusQuo"= 1,
+                    "Trawler_30_Red"= 2,
+                    "AllGears_30_Red" = 3,
+                    "Trawler_40_Red" = 4,
+                    "AllGears_40_Red"= 5,
+                    "Trawler_50_Red"= 6,
+                    "AllGears_50_Red"= 7,
+                    "Trawler_10_20_30"= 8,
+                    "AllGears_10_20_30"= 9,
+                    "Trawler_10_17.5_25_32.5_40"= 10,
+                    "AllGears_10_17.5_25_32.5_40"= 11,
+                    "Trawler_10_20_30_40_50"= 12,
+                    "AllGears_10_20_30_40_50"= 13,
+                    "Original_FRA_allYear"= 14,
+                    "Northward_Expansion_of_FRA_Season"= 15,
+                    "Northward_Expansion_of_FRA_allYear" = 16,
+                    "90-100_Isobath_Closures_Season"= 17,
+                    "90-100_Isobaths_Closures_allYear"= 18, 
+                    "Offshore_Closures_Season"= 19,
+                    "Offshore_Closures_allYear"= 20,
+                    "Northward_Expansion_of_FRA_90-100m_Offshore_Closures_Combined"= 21,
+                    "Northward_Expansion_of_FRA_Offshore_Closures_Combined" = 22,
+                    "Northward_Expansion_of_FRA_90-100m_Offshore_allYear_Closures_Combined" = 23,
+                    "Northward_Expansion_of_FRA_Offshore_allYear_Closures_Combined"= 24,
+                    "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures"= 25,
+                    "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures"= 26,
+                    "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures_allGears"= 27,
+                    "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures_allGears"= 28
+                    ))
+
+```
+
+## Merge scenario rankings
+
+```{r merge.rank.catch.vals, echo=TRUE}
+
+catch_baseScenEffects_rank2024_reorder2 <- catch_baseScenEffects_rank2024_reorder
+
+names(catch_baseScenEffects_rank2024_reorder2) <- 
+  c("SceName", "Scenarios","RankReference","SceName_short")
+
+Full_rank_Sce_catchwgt_reorder2 <- 
+  merge(catchWgtot_rank2024_reorder, catch_baseScenEffects_rank2024_reorder2,
+        by = c("SceName","Scenarios","SceName_short"))
+
+# View(Full_rank_Sce_catchwgt_reorder2)
+
+Full_rank_Sce_catchwgt_reorder2$Metric <- "Scenario Rankings for Catch Weight"
+
+Full_rank_Sce_catchwgt_reorder2$Metric.points <- 
+  "Scenario Rankings for Catch Weight Under Base Assumptions"
+
+```
+
+## Exploratory statistics of catch weight
+
+```{r test.normal.catch, echo=TRUE}
+
+leveneTest(catch_year_agg$Rel_Diff_wg, group = catch_year_agg$SceName)
+
+hist(catch_year_agg$Rel_Diff_wg)
+qqnorm(catch_year_agg$Rel_Diff_wg)
+qqline(catch_year_agg$Rel_Diff_wg)
+
+```
+
+## Plot scenario rankings
+
+```{r catch.scenario.ranking, echo=TRUE}
+
+Sce_ranking_catchwgt_plot <- ggplot(data = Full_rank_Sce_catchwgt_reorder2,
+                                    aes(x=SceName_short, y=rank)) +
+  geom_rect(aes(xmin = 1.5, xmax = 7.5, ymin = -Inf, ymax = Inf), fill = "grey",
+            alpha = 0.05) +
+  geom_rect(aes(xmin = 13.5, xmax = 20.5, ymin = -Inf, ymax = Inf), 
+            fill = "grey", alpha = 0.05) +
+  geom_rect(aes(xmin = 24.5, xmax = Inf, ymin = -Inf, ymax = Inf), fill = "grey",
+            alpha = 0.05) +
+  scale_x_discrete(labels=c("a", "b", "c", "d", "e", "f", "g", "h", "i", "j",
+                            "k", "l", "m", "n", "o", "p", "q", "r", "s", "t",
+                            "u", "v", "w", "x", "y", "z", "aa", "bb")) +
+  geom_boxplot(aes(fill=str_wrap(Metric,25))) +
+  geom_point(aes(x=SceName_short, y=RankReference,
+                 color=str_wrap(Metric.points,25)), 
+             shape=15, 
+             size=2, 
+             position = position_jitterdodge(jitter.width = 0, 
+                                             jitter.height = 0), 
+             show.legend = T) +
+  theme_bw() +
+  bar_chart_text_theme +
+  bar_chart_legend_theme +
+  scale_fill_manual(values = "#A10A54") + 
+  scale_color_manual(values = "#67032F") +  
+  labs(fill = " ") + 
+  xlab("Scenario Code")+
+  ylab("Scenario Rankings for Catch Weight") +
+  annotate("text", x = 1, y = 28.619, label = "StaQ", size = 5) +
+  annotate("text", x = 4.5, y = 28.619, label = "All-at-once Effort", size = 5) +
+  annotate("text", x = 10.5, y = 28.619, label = "Gradual Effort", size = 5) +
+  annotate("text", x = 17, y = 28.619, label = "Spatial Effects", size = 5) +
+  annotate("text", x = 22.5, y = 28.619, label = "Spatial Network", size = 5) +
+  annotate("text", x = 26.5, y = 28.619, label = "Effort + Spatial", size = 5)
+
+Sce_ranking_catchwgt_plot
+
+Sce_ranking_catchwgt_plot2 <- Sce_ranking_catchwgt_plot + 
+  guides(fill = guide_legend(order=1), color = guide_legend(order=2))
+
+Sce_ranking_catchwgt_plot2
+
+```
+
+# For population biomass
+
+Change to relative difference in biomass from the reference period instead of flat biomass...for comparing single uncertainty effects you could a sensitivity coefficient but this is a very weak indicator. 
+
+## Load only biomass
+
+```{r biomass, echo=TRUE}
+
+name_RData_6.4 <- 'biomtot_6.4' 
+
+biomtot_6.4 <- fread(paste(path, "Data/", name_RData_6.4, '.csv', sep = ''))
+
+```
+
+## Join the simulation design table to the simulation output
+
+Apply the names of the Scenarios in the column designating their numeric values and graft this to the Data.
+
+```{r simulation.bind.biomass, echo=TRUE}
+
+step <- unique(catchWgtot_6.4$step)
+nbYear <- length(step)/12 
+YEAR <- sort(rep(seq(2015,2014+nbYear,1), 12))
+MONTH <- rep(seq(1,12,1),nbYear)
+tabStep <- data.frame(step, YEAR, MONTH)
+
+biomtot_6.4 <- inner_join(biomtot_6.4, tabStep, by=c('step'))
+biomtot_6.4 <- inner_join(biomtot_6.4, simulationDesign, by=c('simu'))
+
+```
+
+# Isolate begininning of month
+
+We are only interested in January biomass before simulations run. Because age zero values are fixed in the model, we can drop age class 0 from the biomass analyses. However, it will not have an effect if you leave them because we only take the average at the end after summing like parts. 
+
+```{r begin.month, echo=TRUE}
+
+biomass_janv <- biomtot_6.4[biomtot_6.4$step==0 | biomtot_6.4$step==12 | biomtot_6.4$step==24 | biomtot_6.4$step==36 | biomtot_6.4$step==48 | biomtot_6.4$step==60 | biomtot_6.4$step==72 | biomtot_6.4$step==84 | biomtot_6.4$step==96 | biomtot_6.4$step==108, ]
+
+testeffects_age.zero <- subset(biomass_janv, group == 0)
+
+biomass_janv <- subset(biomass_janv, group != 0)
+
+```
+
+# Isolate the reference scenario and value (StatusQuosQuo with original params)
+
+Checking against the simulated results from the compiled data here and ISIS-Fish terminal, the same output is achieved. Here we choose StatusQuo scenario and the baseline assumptions for recruitment, initial abundance, or connectivity.
+This is essentially out base line values for each scenario. Therefore, InitialAbundance = 0, Recruitment = 0, and Connectivity = 0. 
+
+```{r key.binding.biomass, echo=TRUE}
+
+# For Population Biomass:
+biomass_year <- setNames(aggregate(value~YEAR+simu+InitialAbundance+Recruitment+Connectivity+Scenarios,data=biomass_janv,sum),c("YEAR","simu","InitialAbundance","Recruitment","Connectivity","Scenarios","Biomass"))
+
+biomass_year$CombiSimu <- paste0("Init",biomass_year$InitialAbundance,"_Recr",biomass_year$Recruitment, "_Conn",biomass_year$Connectivity,"_Scen",biomass_year$Scenarios)
+
+biomass_Ref <- biomass_year[biomass_year$CombiSimu == "Init0_Recr0_Conn0_Scen0",]
+
+biomass_Ref <- as.data.frame(biomass_Ref[, c("YEAR","Biomass")])
+
+colnames(biomass_Ref)[2] <- "Biomass_ref"
+
+biomass_Ref_value <- subset(biomass_Ref, YEAR <= 2017)
+
+biomass_Ref_value <- mean(biomass_Ref_value$Biomass_ref)
+biomass_Ref_value
+
+```
+
+## Compute reference value
+
+```{r biomass.ref, echo=TRUE}
+
+biomass_year_agg <- as.data.table(biomass_year)
+
+biomass_year_agg  <- biomass_year_agg[,list(Biomass = sum(Biomass)), by = list(YEAR, simu, InitialAbundance, Recruitment, Connectivity, Scenarios)]
+
+# Calculate relative differences (in biomass: Rel_Diff_biom)
+biomass_year_agg$Rel_Diff_biom <- ((biomass_year_agg$Biomass - biomass_Ref_value) / biomass_Ref_value) * 100
+
+biomass_year_agg$Scenarios <- as.factor(as.numeric(biomass_year_agg$Scenarios))
+
+biomass_year_agg <- merge(biomass_year_agg, table_Sce_6.4, by=c("Scenarios"))
+
+biomass_year_agg$SceName <- factor(biomass_year_agg$SceName, 
+                                   levels = table_Sce_6.4$SceName)
+
+```
+
+## Calculate the scenario effect uncertainties
+
+Recall that there are 3 recruitment, 3 connectivity, and 2 initial abundance values (so 3x3x2 points for each scenario). The range will be 1 to 28. Ranks are determined based on the maximum relative difference value. Therefore the lowest value with have a Rank of 1. 
+
+```{r biomass.rank.scen, echo=TRUE}
+
+biomass_year_agg$CombiSimu <- paste0("Init", biomass_year_agg$InitialAbundance, "_Recr", biomass_year_agg$Recruitment,"_Conn", biomass_year_agg$Connectivity)
+
+biomtot_rank2024 <- data.table()
+
+for (c in (1:length(unique(biomass_year_agg$CombiSimu)))) { 
+  
+  # for each combination
+  biomtot_CombiSimu <- biomass_year_agg[biomass_year_agg$CombiSimu ==
+                                          unique(biomass_year_agg$CombiSimu)[c],]
+  
+  # for the last simulation year (2024)
+   biomtot_CombiSimu2024 <- biomtot_CombiSimu[biomtot_CombiSimu$YEAR == 2024, ]
+   
+   biomtot_CombiSimu2024$rank <- rank(biomtot_CombiSimu2024$Rel_Diff_biom,
+                                      ties.method = "max")
+   
+   biomtot_CombiSimu2024 <-
+     as.data.frame(biomtot_CombiSimu2024[,c("SceName","Scenarios","rank")])
+   
+   biomtot_rank2024 <- rbind(biomtot_rank2024, biomtot_CombiSimu2024)
+}
+
+# View(biomtot_rank2024)
+
+```
+
+## Create groups by scenario type
+
+Here we use numbers instead of letters so that we can create a custom scale later on. These do not correspond to the scenario number rather the order in which to plot.
+
+```{r reorder.catch.scen, echo=TRUE}
+
+### Reorder the groups that we are interested in
+biomtot_rank2024_reorder <- 
+  biomtot_rank2024 %>% mutate(
+    SceName_short = 
+      recode_factor(SceName,
+                    "StatusQuo"= 1,
+                    "Trawler_30_Red"= 2,
+                    "AllGears_30_Red" = 3,
+                    "Trawler_40_Red" = 4,
+                    "AllGears_40_Red"= 5,
+                    "Trawler_50_Red"= 6,
+                    "AllGears_50_Red"= 7,
+                    "Trawler_10_20_30"= 8,
+                    "AllGears_10_20_30"= 9,
+                    "Trawler_10_17.5_25_32.5_40"= 10,
+                    "AllGears_10_17.5_25_32.5_40"= 11,
+                    "Trawler_10_20_30_40_50"= 12,
+                    "AllGears_10_20_30_40_50"= 13,
+                    "Original_FRA_allYear"= 14,
+                    "Northward_Expansion_of_FRA_Season"= 15,
+                    "Northward_Expansion_of_FRA_allYear" = 16,
+                    "90-100_Isobath_Closures_Season"= 17,
+                    "90-100_Isobaths_Closures_allYear"= 18, 
+                    "Offshore_Closures_Season"= 19,
+                    "Offshore_Closures_allYear"= 20,
+                    "Northward_Expansion_of_FRA_90-100m_Offshore_Closures_Combined"= 21,
+                    "Northward_Expansion_of_FRA_Offshore_Closures_Combined" = 22,
+                    "Northward_Expansion_of_FRA_90-100m_Offshore_allYear_Closures_Combined" = 23,
+                    "Northward_Expansion_of_FRA_Offshore_allYear_Closures_Combined"= 24,
+                    "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures"= 25,
+                    "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures"= 26,
+                    "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures_allGears"= 27,
+                    "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures_allGears"= 28
+                    ))
+
+```
+
+## Focusing only on base scenario effects, rank scenario simulations
+
+Here we are only interested in reference simulations (cad: Init=0, Rec=0, Conn=0)
+
+```{r set.biomass.mean.base.reorder, echo=TRUE}
+
+biomass_year_agg_baseScenEffects <- subset(biomass_year_agg, 
+                                           CombiSimu == "Init0_Recr0_Conn0")
+
+# for the last simulation year (2024)
+biomass_baseScenEffects_rank2024 <-
+  biomass_year_agg_baseScenEffects[biomass_year_agg_baseScenEffects$YEAR == 2024, ]
+
+biomass_baseScenEffects_rank2024$rank <-
+  rank(biomass_baseScenEffects_rank2024$Rel_Diff_biom, ties.method = "max")
+
+biomass_baseScenEffects_rank2024 <-
+  as.data.frame(biomass_baseScenEffects_rank2024[,c("SceName","Scenarios","rank")])
+
+### Reorder the groups that we are interested in
+biomass_baseScenEffects_rank2024_reorder <- 
+  biomass_baseScenEffects_rank2024 %>% mutate(
+    SceName_short = 
+      recode_factor(SceName,
+                    "StatusQuo"= 1,
+                    "Trawler_30_Red"= 2,
+                    "AllGears_30_Red" = 3,
+                    "Trawler_40_Red" = 4,
+                    "AllGears_40_Red"= 5,
+                    "Trawler_50_Red"= 6,
+                    "AllGears_50_Red"= 7,
+                    "Trawler_10_20_30"= 8,
+                    "AllGears_10_20_30"= 9,
+                    "Trawler_10_17.5_25_32.5_40"= 10,
+                    "AllGears_10_17.5_25_32.5_40"= 11,
+                    "Trawler_10_20_30_40_50"= 12,
+                    "AllGears_10_20_30_40_50"= 13,
+                    "Original_FRA_allYear"= 14,
+                    "Northward_Expansion_of_FRA_Season"= 15,
+                    "Northward_Expansion_of_FRA_allYear" = 16,
+                    "90-100_Isobath_Closures_Season"= 17,
+                    "90-100_Isobaths_Closures_allYear"= 18, 
+                    "Offshore_Closures_Season"= 19,
+                    "Offshore_Closures_allYear"= 20,
+                    "Northward_Expansion_of_FRA_90-100m_Offshore_Closures_Combined"= 21,
+                    "Northward_Expansion_of_FRA_Offshore_Closures_Combined" = 22,
+                    "Northward_Expansion_of_FRA_90-100m_Offshore_allYear_Closures_Combined" = 23,
+                    "Northward_Expansion_of_FRA_Offshore_allYear_Closures_Combined"= 24,
+                    "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures"= 25,
+                    "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures"= 26,
+                    "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures_allGears"= 27,
+                    "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures_allGears"= 28
+                    ))
+
+```
+
+## Merge scenario rankings
+
+```{r merge.rank.biomass.vals, echo=TRUE}
+
+biomass_baseScenEffects_rank2024_reorder2 <-
+  biomass_baseScenEffects_rank2024_reorder
+
+names(biomass_baseScenEffects_rank2024_reorder2) <- 
+  c("SceName", "Scenarios","RankReference","SceName_short")
+
+Full_rank_Sce_biomass_reorder2 <- 
+  merge(biomtot_rank2024_reorder, biomass_baseScenEffects_rank2024_reorder2, 
+        by = c("SceName","Scenarios","SceName_short"))
+
+# View(Full_rank_Sce_biomass_reorder2)
+
+Full_rank_Sce_biomass_reorder2$Metric <- "Scenario Rankings for Biomass"
+
+Full_rank_Sce_biomass_reorder2$Metric.points <- 
+  "Scenario Rankings for Biomass Under Base Assumptions"
+
+```
+
+## Exploratory statistics of biomass
+
+```{r test.normal.biomass, echo=TRUE}
+
+leveneTest(biomass_year_agg$Rel_Diff_biom, group = biomass_year_agg$SceName)
+
+hist(biomass_year_agg$Rel_Diff_biom)
+qqnorm(biomass_year_agg$Rel_Diff_biom)
+qqline(biomass_year_agg$Rel_Diff_biom)
+
+```
+
+## Plot scenario rankings
+
+```{r biomass.scenario.ranking, echo=TRUE}
+
+Sce_ranking_biomass_plot <- ggplot(data = Full_rank_Sce_biomass_reorder2,
+                                   aes(x=SceName_short, y=rank)) + 
+  geom_rect(aes(xmin = 1.5, xmax = 7.5, ymin = -Inf, ymax = Inf), fill = "grey",
+            alpha = 0.05) +
+  geom_rect(aes(xmin = 13.5, xmax = 20.5, ymin = -Inf, ymax = Inf), 
+            fill = "grey", alpha = 0.05) +
+  geom_rect(aes(xmin = 24.5, xmax = Inf, ymin = -Inf, ymax = Inf), 
+            fill = "grey", alpha = 0.05) +
+  scale_x_discrete(labels=c("a", "b", "c", "d", "e", "f", "g", "h", "i", "j",
+                            "k", "l", "m", "n", "o", "p", "q", "r", "s", "t",
+                            "u", "v", "w", "x", "y", "z", "aa", "bb")) +
+  geom_boxplot(aes(fill=str_wrap(Metric,25))) +
+  geom_point(aes(x=SceName_short, y=RankReference,
+                 color=str_wrap(Metric.points,25)), 
+             shape=15,
+             size=2,
+             position = position_jitterdodge(jitter.width = 0,
+                                             jitter.height = 0), 
+             show.legend = T) +
+  theme_bw() +
+  bar_chart_text_theme +
+  bar_chart_legend_theme +
+  scale_fill_manual(values = "#E6CC00") + 
+  scale_color_manual(values = "#FFC30B") + 
+  labs(fill = " ") + 
+  xlab("Scenario Code")+
+  ylab("Scenario Rankings for Biomass") +
+  annotate("text", x = 1, y = 28.619, label = "StaQ", size = 5) +
+  annotate("text", x = 4.5, y = 28.619, label = "All-at-once Effort",
+           size = 5) +
+  annotate("text", x = 10.5, y = 28.619, label = "Gradual Effort", size = 5) +
+  annotate("text", x = 17, y = 28.619, label = "Spatial Effects", size = 5) +
+  annotate("text", x = 22.5, y = 28.619, label = "Spatial Network", size = 5) +
+  annotate("text", x = 26.5, y = 28.619, label = "Effort + Spatial", size = 5)
+
+Sce_ranking_biomass_plot
+
+Sce_ranking_biomass_plot2 <- Sce_ranking_biomass_plot + 
+  guides(fill = guide_legend(order=1), color = guide_legend(order=2))
+
+Sce_ranking_biomass_plot2
+
+```
+
+# For French revenues
+
+From the revenues analysis work, merge all output files.
+
+## Load revenue files and merge
+
+```{r revenues.all.species, echo=TRUE}
+
+# For species other than Hake
+load(file = paste(path, 'Data/effort_year_metier_vpue_taxon_distinct', '.RData', sep=''))
+
+colnames(effort_year_metier_vpue_taxon_distinct)
+
+revenues_year_taxon <- setNames(aggregate(Revenues~YEAR+SceName+TAXON_GROUP_NAME+SceName+simu+InitialAbundance+Recruitment+Connectivity+Scenarios,data=effort_year_metier_vpue_taxon_distinct,sum),c("YEAR","TAXON_GROUP_NAME","SceName","simu","InitialAbundance","Recruitment","Connectivity","Scenarios","Revenues"))
+
+# For revenues of Hake
+load(file = paste(path, 'Data/Revenues_hake', '.RData', sep=''))
+
+catchweight_price$TAXON_GROUP_NAME <- "Merluccius merluccius"
+
+catchweight_price$Scenarios <- as.character(catchweight_price$Scenarios)
+
+catchweight_price1.1 <- merge(catchweight_price, table_Sce_6.4,
+                              by=c("Scenarios"))
+
+revenues_year_hake <- setNames(aggregate(REVENUES~YEAR+TAXON_GROUP_NAME+SceName+simu+InitialAbundance+Recruitment+Connectivity+Scenarios,data=catchweight_price1.1,sum),c("YEAR","TAXON_GROUP_NAME","SceName","simu","InitialAbundance","Recruitment","Connectivity","Scenarios","Revenues"))
+
+merged_revenues <- rbind(revenues_year_hake, revenues_year_taxon)
+
+```
+
+# Isolate the reference scenario and value (StatusQuosQuo with original params)
+
+Checking against the simulated results from the compiled data here and ISIS-Fish terminal, the same output is achieved. Here we choose StatusQuo scenario and the baseline assumptions for recruitment, initial abundance, or connectivity.
+This is essentially out base line values for each scenario. Therefore, InitialAbundance = 0, Recruitment = 0, and Connectivity = 0. 
+
+```{r key.binding.revenues, echo=TRUE}
+
+# For Revenues:
+merged_revenues_year <- setNames(aggregate(Revenues~YEAR+SceName+simu+InitialAbundance+Recruitment+Connectivity+Scenarios,data=merged_revenues,sum),c("YEAR","SceName","simu","InitialAbundance","Recruitment","Connectivity","Scenarios","Revenues"))
+
+merged_revenues_year$CombiSimu <- paste0("Init",merged_revenues_year$InitialAbundance,"_Recr",merged_revenues_year$Recruitment, "_Conn",merged_revenues_year$Connectivity,"_Scen",merged_revenues_year$Scenarios)
+
+merged_revenues_Ref <- merged_revenues_year[merged_revenues_year$CombiSimu == "Init0_Recr0_Conn0_Scen0",]
+
+merged_revenues_Ref <- as.data.frame(merged_revenues_Ref[, c("YEAR","Revenues")])
+colnames(merged_revenues_Ref)[2] <- "Revenues_ref"
+
+merged_revenues_Ref_value <- subset(merged_revenues_Ref, YEAR == 2017)
+merged_revenues_Ref_value <- mean(merged_revenues_Ref_value$Revenues_ref)
+merged_revenues_Ref_value
+
+```
+
+## Compute reference value
+
+```{r revenues.ref, echo=TRUE}
+
+merged_revenues_year_agg <- as.data.table(merged_revenues_year)
+
+merged_revenues_year_agg  <- merged_revenues_year_agg[,list(Revenues = sum(Revenues)), by = list(YEAR, simu, InitialAbundance, Recruitment, Connectivity, Scenarios)]
+
+# Calculate relative differences (in revenues: Rel_Diff_revenues)
+merged_revenues_year_agg$Rel_Diff_revenues <-
+  ((merged_revenues_year_agg$Revenues - merged_revenues_Ref_value) /
+     merged_revenues_Ref_value) * 100
+
+merged_revenues_year_agg$Scenarios <- as.factor(as.numeric(merged_revenues_year_agg$Scenarios))
+
+merged_revenues_year_agg <- merge(merged_revenues_year_agg, table_Sce_6.4, by=c("Scenarios"))
+
+merged_revenues_year_agg$SceName <- factor(merged_revenues_year_agg$SceName, levels = table_Sce_6.4$SceName)
+
+```
+
+## Calculate the scenario effect uncertainties
+
+Recall that there are 3 recruitment, 3 connectivity, and 2 initial abundance values (so 3x3x2 points for each scenario). You range will be 1 to 28. Ranks are determined based on the maximum relative difference value. Therefore the lowest value with have a Rank of 1. 
+
+```{r revenues.rank.scen, echo=TRUE}
+
+merged_revenues_year_agg$CombiSimu <- paste0("Init", merged_revenues_year_agg$InitialAbundance, "_Recr", merged_revenues_year_agg$Recruitment,"_Conn", merged_revenues_year_agg$Connectivity)
+
+merged_revenues_rank2024 <- data.table()
+
+for (c in (1:length(unique(merged_revenues_year_agg$CombiSimu)))) { 
+  
+  # for each combination
+  merged_revenues_CombiSimu <-
+    merged_revenues_year_agg[merged_revenues_year_agg$CombiSimu ==
+                               unique(merged_revenues_year_agg$CombiSimu)[c],]
+  
+  # for the last simulation year (2024)
+   merged_revenues_CombiSimu2024 <-
+     merged_revenues_CombiSimu[merged_revenues_CombiSimu$YEAR == 2024, ]
+   
+   merged_revenues_CombiSimu2024$rank <-
+     rank(merged_revenues_CombiSimu2024$Rel_Diff_revenues, ties.method = "max")
+   
+   merged_revenues_CombiSimu2024 <-
+     as.data.frame(merged_revenues_CombiSimu2024[,c("SceName","Scenarios","rank")])
+   
+   merged_revenues_rank2024 <- rbind(merged_revenues_rank2024,
+                                     merged_revenues_CombiSimu2024)
+}
+
+# View(merged_revenues_rank2024)
+
+```
+
+## Create groups by scenario type
+
+Here we use numbers instead of letters so that we can create a custom scale later on. These do not correspond to the scenario number rather the order in which to plot.
+
+```{r reorder.revenues.scen, echo=TRUE}
+
+### Reorder the groups that we are interested in
+merged_revenues_rank2024_reorder <- 
+  merged_revenues_rank2024 %>% mutate(
+    SceName_short = 
+      recode_factor(SceName,
+                    "StatusQuo"= 1,
+                    "Trawler_30_Red"= 2,
+                    "AllGears_30_Red" = 3,
+                    "Trawler_40_Red" = 4,
+                    "AllGears_40_Red"= 5,
+                    "Trawler_50_Red"= 6,
+                    "AllGears_50_Red"= 7,
+                    "Trawler_10_20_30"= 8,
+                    "AllGears_10_20_30"= 9,
+                    "Trawler_10_17.5_25_32.5_40"= 10,
+                    "AllGears_10_17.5_25_32.5_40"= 11,
+                    "Trawler_10_20_30_40_50"= 12,
+                    "AllGears_10_20_30_40_50"= 13,
+                    "Original_FRA_allYear"= 14,
+                    "Northward_Expansion_of_FRA_Season"= 15,
+                    "Northward_Expansion_of_FRA_allYear" = 16,
+                    "90-100_Isobath_Closures_Season"= 17,
+                    "90-100_Isobaths_Closures_allYear"= 18, 
+                    "Offshore_Closures_Season"= 19,
+                    "Offshore_Closures_allYear"= 20,
+                    "Northward_Expansion_of_FRA_90-100m_Offshore_Closures_Combined"= 21,
+                    "Northward_Expansion_of_FRA_Offshore_Closures_Combined" = 22,
+                    "Northward_Expansion_of_FRA_90-100m_Offshore_allYear_Closures_Combined" = 23,
+                    "Northward_Expansion_of_FRA_Offshore_allYear_Closures_Combined"= 24,
+                    "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures"= 25,
+                    "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures"= 26,
+                    "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures_allGears"= 27,
+                    "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures_allGears"= 28
+                    ))
+
+```
+
+## Focusing only on base scenario effects, rank scenario simulations
+
+Here we are only interested in reference simulations (cad: Init=0, Rec=0, Conn=0).
+
+```{r set.revenues.mean.base.reorder, echo=TRUE}
+
+merged_revenues_year_agg_baseScenEffects <- subset(merged_revenues_year_agg,
+                                                   CombiSimu == "Init0_Recr0_Conn0")
+
+# for the last simulation year (2024)
+merged_revenues_baseScenEffects_rank2024 <-
+  
+merged_revenues_year_agg_baseScenEffects[merged_revenues_year_agg_baseScenEffects$YEAR == 2024, ]
+
+merged_revenues_baseScenEffects_rank2024$rank <-
+  rank(merged_revenues_baseScenEffects_rank2024$Rel_Diff_revenues, 
+       ties.method = "max")
+
+merged_revenues_baseScenEffects_rank2024 <-
+  as.data.frame(merged_revenues_baseScenEffects_rank2024[,c("SceName","Scenarios","rank")])
+
+### Reorder the groups that we are interested in
+merged_revenues_baseScenEffects_rank2024_reorder <- 
+  merged_revenues_baseScenEffects_rank2024 %>% mutate(
+    SceName_short = 
+      recode_factor(SceName,
+                    "StatusQuo"= 1,
+                    "Trawler_30_Red"= 2,
+                    "AllGears_30_Red" = 3,
+                    "Trawler_40_Red" = 4,
+                    "AllGears_40_Red"= 5,
+                    "Trawler_50_Red"= 6,
+                    "AllGears_50_Red"= 7,
+                    "Trawler_10_20_30"= 8,
+                    "AllGears_10_20_30"= 9,
+                    "Trawler_10_17.5_25_32.5_40"= 10,
+                    "AllGears_10_17.5_25_32.5_40"= 11,
+                    "Trawler_10_20_30_40_50"= 12,
+                    "AllGears_10_20_30_40_50"= 13,
+                    "Original_FRA_allYear"= 14,
+                    "Northward_Expansion_of_FRA_Season"= 15,
+                    "Northward_Expansion_of_FRA_allYear" = 16,
+                    "90-100_Isobath_Closures_Season"= 17,
+                    "90-100_Isobaths_Closures_allYear"= 18, 
+                    "Offshore_Closures_Season"= 19,
+                    "Offshore_Closures_allYear"= 20,
+                    "Northward_Expansion_of_FRA_90-100m_Offshore_Closures_Combined"= 21,
+                    "Northward_Expansion_of_FRA_Offshore_Closures_Combined" = 22,
+                    "Northward_Expansion_of_FRA_90-100m_Offshore_allYear_Closures_Combined" = 23,
+                    "Northward_Expansion_of_FRA_Offshore_allYear_Closures_Combined"= 24,
+                    "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures"= 25,
+                    "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures"= 26,
+                    "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures_allGears"= 27,
+                    "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures_allGears"= 28
+                    ))
+
+```
+
+## Merge scenario rankings
+
+```{r merge.rank.revenue.vals, echo=TRUE}
+
+merged_revenues_baseScenEffects_rank2024_reorder2 <-
+  merged_revenues_baseScenEffects_rank2024_reorder
+
+names(merged_revenues_baseScenEffects_rank2024_reorder2) <- 
+  c("SceName", "Scenarios","RankReference","SceName_short")
+
+Full_rank_Sce_merged_revenues_reorder2 <-
+  merge(merged_revenues_rank2024_reorder,
+        merged_revenues_baseScenEffects_rank2024_reorder2, 
+        by = c("SceName","Scenarios","SceName_short"))
+
+# View(Full_rank_Sce_merged_revenues_reorder2)
+
+Full_rank_Sce_merged_revenues_reorder2$Metric <- 
+  "Scenario Rankings for French Revenues"
+
+Full_rank_Sce_merged_revenues_reorder2$Metric.points <- 
+  "Scenario Rankings for French Revenues Under Base Assumptions"
+
+```
+
+## Exploratory statistics of merged_revenues
+
+```{r test.normal.revenues, echo=TRUE}
+
+leveneTest(merged_revenues_year_agg$Rel_Diff_revenues, 
+           group = merged_revenues_year_agg$SceName)
+
+hist(merged_revenues_year_agg$Rel_Diff_revenues)
+qqnorm(merged_revenues_year_agg$Rel_Diff_revenues)
+qqline(merged_revenues_year_agg$Rel_Diff_revenues)
+
+```
+
+## Plot scenario rankings
+
+```{r revenue.scenario.ranking, echo=TRUE}
+
+Sce_ranking_revenues_plot <- ggplot(data = Full_rank_Sce_merged_revenues_reorder2, aes(x=SceName_short, y=rank)) + 
+  geom_rect(aes(xmin = 1.5, xmax = 7.5, ymin = -Inf, ymax = Inf), 
+            fill = "grey", alpha = 0.05) +
+  geom_rect(aes(xmin = 13.5, xmax = 20.5, ymin = -Inf, ymax = Inf), 
+            fill = "grey", alpha = 0.05) +
+  geom_rect(aes(xmin = 24.5, xmax = Inf, ymin = -Inf, ymax = Inf), 
+            fill = "grey", alpha = 0.05) +
+  scale_x_discrete(labels=c("a", "b", "c", "d", "e", "f", "g", "h", "i", "j",
+                            "k", "l", "m", "n", "o", "p", "q", "r", "s", "t",
+                            "u", "v", "w", "x", "y", "z", "aa", "bb")) +
+  geom_boxplot(aes(fill=str_wrap(Metric,25))) +
+  geom_point(aes(x=SceName_short, y=RankReference,
+                 color=str_wrap(Metric.points,25)), 
+             shape=15, 
+             size=2, 
+             position = position_jitterdodge(jitter.width = 0, 
+                                             jitter.height = 0),
+             show.legend = T) +
+  theme_bw() +
+  bar_chart_text_theme +
+  bar_chart_legend_theme +
+  scale_fill_manual(values = "#59788E") + 
+  scale_color_manual(values = "#1F456E") + 
+  labs(fill = " ") + 
+  xlab("Scenario Code") +
+  ylab("Scenario Rankings for French Revenues") +
+  annotate("text", x = 1, y = 28.619, label = "StaQ", size = 5) +
+  annotate("text", x = 4.5, y = 28.619, label = "All-at-once Effort"
+           , size = 5) +
+  annotate("text", x = 10.5, y = 28.619, label = "Gradual Effort", size = 5) +
+  annotate("text", x = 17, y = 28.619, label = "Spatial Effects", size = 5) +
+  annotate("text", x = 22.5, y = 28.619, label = "Spatial Network", size = 5) +
+  annotate("text", x = 26.5, y = 28.619, label = "Effort + Spatial", size = 5)
+
+Sce_ranking_revenues_plot
+
+Sce_ranking_revenues_plot2 <- Sce_ranking_revenues_plot + guides(fill = guide_legend(order=1), color = guide_legend(order=2))
+
+Sce_ranking_revenues_plot2
+
+```
+
+# Put Everything into the Same Graph
+
+## Create color wheel
+
+```{r}
+
+cwheel <- c("#A10A54","#E6CC00","#59788E")
+pie(rep(1, 3), col = cwheel)
+
+cwheel2 <- c("#67032F","#FFC30B","#1F456E")
+pie(rep(1, 3), col = cwheel2)
+
+```
+
+## Merge Previous Works
+
+"CatchWeight Base Index Level: Conn=0,Init=0,Recr=0", "Biomass Base Index Level: Conn=0,Init=0,Recr=0", "Revenues Base Index Level: Conn=0,Init=0,Recr=0".
+This figure is presented in Appendix F, Fig. F.1.
+
+```{r Appendix.Fig.F.1}
+
+table_all <- rbind(Full_rank_Sce_catchwgt_reorder2, 
+                   Full_rank_Sce_biomass_reorder2,
+                   Full_rank_Sce_merged_revenues_reorder2)
+
+break_list1 <- c("Scenario Rankings for Catch Weight", 
+                 "Scenario Rankings for Biomass", 
+                 "Scenario Rankings for French Revenues")
+
+break_list2 <- c("Scenario Rankings for Catch Weight Under Base Assumptions",
+                 "Scenario Rankings for Biomass Under Base Assumptions",
+                 "Scenario Rankings for French Revenues Under Base Assumptions")
+
+table_all_plot <- ggplot(data = table_all, aes(x=SceName_short, y=rank)) +
+  geom_rect(aes(xmin = 1.5, xmax = 7.5, ymin = -Inf, ymax = Inf), fill = "grey",
+            alpha = 0.05) +
+  geom_rect(aes(xmin = 13.5, xmax = 20.5, ymin = -Inf, ymax = Inf), 
+            fill = "grey", alpha = 0.05) +
+  geom_rect(aes(xmin = 24.5, xmax = Inf, ymin = -Inf, ymax = Inf), 
+            fill = "grey", alpha = 0.05) +
+  scale_x_discrete(labels=c("a", "b", "c", "d", "e", "f", "g", "h", "i", "j",
+                            "k", "l", "m", "n", "o", "p", "q", "r", "s", "t",
+                            "u", "v", "w", "x", "y", "z", "aa", "bb")) +
+  geom_boxplot(aes(fill=Metric)) +
+  geom_point(aes(x=SceName_short, y=RankReference, color=Metric.points),
+             shape=15,
+             size=2,
+             position = position_jitterdodge(jitter.width = 0,
+                                             jitter.height = 0),
+             show.legend = T) +
+  theme_bw() +
+  bar_chart_text_theme +
+  bar_chart_legend_theme +
+  scale_fill_manual(values = cwheel, breaks = break_list1,
+                    labels=str_wrap(break_list1, 15)) + 
+  scale_color_manual(values = cwheel2, breaks = break_list2,
+                     labels=str_wrap(break_list2, 15)) +
+  xlab("Scenario Code") +
+  ylab("Scenario Rankings") +
+  annotate("text", x = 1, y = 28.619, label = "StaQ", size = 5) +
+  annotate("text", x = 4.5, y = 28.619, label = "All-at-once Effort",
+           size = 5) +
+  annotate("text", x = 10.5, y = 28.619, label = "Gradual Effort", size = 5) +
+  annotate("text", x = 17, y = 28.619, label = "Spatial Effects", size = 5) +
+  annotate("text", x = 22.5, y = 28.619, label = "Spatial Network", size = 5) +
+  annotate("text", x = 26.5, y = 28.619, label = "Effort + Spatial", size = 5)
+
+table_all_plot
+
+table_all_plot2 <- table_all_plot + guides(fill = guide_legend(order=1),
+                                           color = guide_legend(order=2))
+
+table_all_plot2
+
+ggsave2(filename="Appendix.Fig.F1.pdf", plot=table_all_plot2, device="pdf", path=paste(path,"Figures",sep=""), dpi=1200, width = 29.7, height = 21, unit="cm", limitsize = FALSE)
+
+```

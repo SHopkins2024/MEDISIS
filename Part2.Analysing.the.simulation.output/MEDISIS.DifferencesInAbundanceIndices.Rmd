@@ -1,0 +1,300 @@
+---
+title: "MEDISIS Differences in Abundance"
+author: "Stephanie Hopkins"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+
+rm(list = ls())
+gc()
+
+knitr::opts_chunk$set(echo=TRUE, message=FALSE, results = "hide")
+
+list.of.packages <- c("data.table","tidyverse","reshape2")
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+
+library(data.table)
+library(tidyverse)
+library(reshape2)
+
+# To Replace with your file directory
+dir <- "C:/Users/steph/Documents"
+
+MEDISIS <- "/MEDISIS/Part2.Analysing.the.simulation.output/"
+
+path <- paste(dir,MEDISIS,sep="")
+
+# Full path to ISIS-Fish simulation outputs 
+simFolder <- paste(dir,"/isis-fish-4/isis-database/simulations/",sep="")
+
+# To Replace with your simulation name (note the folder name will be the simulation name specified in the ISIS-Fish terminal, the data in YYmmdd format, and the time in hh:mm format)
+simName <- "sim_MEDISIS_2024-02-15-09-55"
+
+StatusQuo.scen <- paste(simName, "/", simName, "_0/", sep="")
+
+```
+
+# Read the data and make a data frame
+
+Here we are interested in the comparison of the model's simulated abundance at the end of the month by age over the calibration and validation periods (2015-2019). Recall that we only have MEDITS data for the months of May and June, and for age classes 2 or less.
+
+To access this information, go to the where the StatusQuo simulation is stored. 
+So from the Data formation step, where all the simulations were moved into the empty folder with the simulation name, we want to chose the one ending in "_0". So for example if my simulation name is "sim_MEDISIS_2024-02-15-09-55", I would chose the simulation "sim_MEDISIS_2024-02-15-09-55_0". The full path will look something like this: "C:/Users/shopkins/Documents/isis-fish-4/isis-database/simulations/sim_MEDISIS_2024-02-15-09-55_0/resultExports/Abundance_ExportEnd.csv"
+
+```{r simu.data}
+
+isis.fish_statusquo_abund.nb <- fread(paste(simFolder, StatusQuo.scen, "resultExports/Abundance_ExportEnd.csv", sep=""),sep=";")
+
+# View(isis.fish_statusquo_abund.nb)
+
+# Summarise the data to remove zone and ages 3 and up 
+# that are not well represented in MEDITS survey
+isis.fish_statusquo_abund.nb <- isis.fish_statusquo_abund.nb %>%
+  filter(!group %in% c(3:5)) %>%
+  group_by(step, group) %>%
+  summarise(value = sum(value), .groups = "keep")
+
+# Restructure the data so that age is its own column
+isis.fish_statusquo_abund.nb.wd <- isis.fish_statusquo_abund.nb %>%
+  pivot_wider(names_from = "group", values_from = "value")
+
+# View(isis.fish_statusquo_abund.nb.wd)
+
+names(isis.fish_statusquo_abund.nb.wd) <- c("step","Age0","Age1","Age2")
+
+step <- unique(isis.fish_statusquo_abund.nb.wd$step)
+nbYear <- length(step)/12 
+YEAR <- sort(rep(seq(2015,2014+nbYear,1), 12))
+MONTH <- rep(seq(1,12,1),nbYear)
+tabStep <- data.frame(step, YEAR, MONTH)
+
+isis.fish_statusquo_abund.nb.wd <- inner_join(isis.fish_statusquo_abund.nb.wd, tabStep, by=c('step'))
+
+```
+
+# Adjust values to compare
+
+Here we need to convert number to number of thousands, and only use months corresponding to the 
+MEDITS survey. The survey runs in late May and early June so in this study we compared simulated values within a temporal buffer range of +/- 1.5 months  (April to July). 
+
+```{r simu.vals.to.compare}
+
+# covert to number of thousands
+isis.fish_statusquo_abund.nb.wd$Age0 <- as.numeric(isis.fish_statusquo_abund.nb.wd$Age0)/1000
+isis.fish_statusquo_abund.nb.wd$Age1 <- as.numeric(isis.fish_statusquo_abund.nb.wd$Age1)/1000
+isis.fish_statusquo_abund.nb.wd$Age2 <- as.numeric(isis.fish_statusquo_abund.nb.wd$Age2)/1000
+
+# Subset the data to include only the months of April to July (comparable MEDITS years)
+isis.fish_statusquo_abund.nb.wd.sub <- isis.fish_statusquo_abund.nb.wd %>% filter(MONTH %in% c(4:7))
+isis.fish_statusquo_abund.nb.wd.sub
+
+# Take of the mean of this quarter
+isis.fish_statusquo_abund.nb.wd.sub2 <- isis.fish_statusquo_abund.nb.wd.sub %>%
+  group_by(YEAR) %>%
+  summarise(Age0=round(mean(Age0)), Age1=round(mean(Age1)), Age2=round(mean(Age2)))
+
+isis.fish_statusquo_abund.nb.wd.sub2
+
+isis.fish_statusquo_abund.nb.wd.sub2$Source <- "ISIS-Fish"
+
+# Since we do not have data for the projected years, just use the data up to 2020
+isis.fish_statusquo_abund.nb.wd.sub2.1 <- isis.fish_statusquo_abund.nb.wd.sub2 %>%
+  filter(YEAR < 2020)
+
+isis.fish_statusquo_abund.nb.wd.sub2.1$YEAR <- as.character(isis.fish_statusquo_abund.nb.wd.sub2.1$YEAR)
+
+```
+
+## Make a data frame of MEDITS Standard Abundance outputs
+
+Note that from the GFCM 2019 Benchmark session for hake the data was as follows:
+
+YEAR <- c(2015, 2016, 2017, 2018)
+Age0 <- c(1934, 3099, 556, 1584)
+Age1 <- c(202, 228, 167, 344)
+Age2 <- c(24, 24, 31, 13)
+GFCM <- data.frame(YEAR, Age0, Age1, Age2)
+
+However, the MEDITS data used here was applied differently.
+
+Therefore we first load standard abundance values derived from the MEDITS data.
+
+## Load MEDITS aggregations from official data set
+
+Here we are using an aggregation internally used.
+
+```{r medits.data}
+
+load(paste(path,"Data/MEDITS/Abundance Indices/MERLMER_N_MEDITS.Rdata",sep=""))
+
+# Restructure the data
+MERLMER_N_MEDITS.long <- as.data.frame(MERLMER_N_MEDITS) %>%
+  mutate(YEAR = row.names(MERLMER_N_MEDITS)) %>%
+  pivot_longer(!YEAR, names_to = "LENGTH_CLASS", values_to = "StanAbund")
+
+#View(MERLMER_N_MEDITS.long)
+
+# Filter the data to match our data set ranges
+MERLMER_N_MEDITS.long2 <- MERLMER_N_MEDITS.long %>%
+  filter(YEAR %in% c(2015:2019))
+
+```
+
+# Compute Age
+
+Standard practice in the Gulf of Lion is to use an asymptotic growth curve to represent the mean length to age relationship last identified by Mellon-Duval et al., 2010. This growth curve does not take sex specific growth trends or environmental conditions into account. In order to compare the standard abundance at age, we bin on lengths corresponding to a specific age in years. Note that we do not have many observations from age classes 3 and up so these will be filtered out.
+
+```{r compute.age}
+
+MERLMER_N_MEDITS.long2 <- mutate(MERLMER_N_MEDITS.long2, 
+                                 Age = (1/-0.178)*log(1-(as.numeric(LENGTH_CLASS)/110)))
+
+range(MERLMER_N_MEDITS.long2$Age)
+# [1]  0.05130609 13.47132176
+
+MEDITS.set <- MERLMER_N_MEDITS.long2[!is.nan(MERLMER_N_MEDITS.long2$Age),]
+
+range(MEDITS.set$Age)
+# [1]  0.05130609 13.47132176
+
+MEDITS.set$Age <- round(MEDITS.set$Age, digits = 2)
+
+hist(MEDITS.set$Age)
+
+str(MEDITS.set)
+summary(MEDITS.set)
+
+# Test distribution
+Ages2 <- MEDITS.set$Age
+ks.test(Ages2, "pnorm")
+#	Asymptotic one-sample Kolmogorov-Smirnov test
+# data:  Ages
+# D = 0.68663, p-value < 2.2e-16
+# alternative hypothesis: two-sided
+
+MEDITS.set2 <- MEDITS.set
+
+MEDITS.set2.1_0 <- filter(MEDITS.set2, Age < 1)
+MEDITS.set2.1_0$Age_group <- "Age0"
+
+MEDITS.set2.1_1 <- filter(MEDITS.set2, Age > 0.99 & Age < 2)
+MEDITS.set2.1_1$Age_group <- "Age1"
+
+MEDITS.set2.1_2 <- filter(MEDITS.set2, Age > 1.99 & Age < 3)
+MEDITS.set2.1_2$Age_group <- "Age2"
+
+MEDITS.set2.1_3plus <- filter(MEDITS.set2, Age > 2.99)
+MEDITS.set2.1_3plus$Age_group <- "Age3plus"
+
+MEDITS.set2.2 <- rbind(MEDITS.set2.1_0, MEDITS.set2.1_1, MEDITS.set2.1_2, MEDITS.set2.1_3plus)
+
+# Convert to number of thousands
+MEDITS.set2.2$StandAbund <- MEDITS.set2.2$StanAbund/1000
+
+MEDITS.set2.2.agg <- aggregate(StandAbund ~ YEAR + Age_group, FUN=sum, data=MEDITS.set2.2)
+
+fwrite(MEDITS.set2.2.agg, file=paste(path,"Data/compare_standabund_isis.csv", sep=""), sep=";")
+
+```
+
+# Load Aggregated MEDITS Data
+
+Here we are just restructuring the data.
+
+```{r subset.medits.age.abund}
+
+MEDITS.set3 <- fread(paste(path,"Data/compare_standabund_isis.csv", sep=""), sep=";")
+View(MEDITS.set3)
+
+# Restructure the data to match the ISIS-Fish data.frame
+Age0 <- MEDITS.set3 %>% 
+  filter(Age_group == "Age0") %>%
+  pivot_wider(names_from = "Age_group", values_from = "StandAbund")
+
+# Restructure the data to match the ISIS-Fish data.frame
+Age1 <- MEDITS.set3 %>% 
+  filter(Age_group == "Age1") %>%
+  pivot_wider(names_from = "Age_group", values_from = "StandAbund")
+
+# Restructure the data to match the ISIS-Fish data.frame
+Age2 <- MEDITS.set3 %>% 
+  filter(Age_group == "Age2") %>%
+  pivot_wider(names_from = "Age_group", values_from = "StandAbund")
+
+MEDITS_standabund2 <- inner_join(Age0, Age1, by="YEAR")
+
+MEDITS_standabund2.1 <- inner_join(MEDITS_standabund2, Age2, by="YEAR")
+
+MEDITS_standabund2.1$Source <- "MEDITS"
+MEDITS_standabund2.1
+
+```
+
+# Compare outputs
+
+Join the two dataframes and restructure the data once more.
+
+```{r merge.simu.abundance.and.medits}
+
+final.data <- rbind(isis.fish_statusquo_abund.nb.wd.sub2.1, MEDITS_standabund2.1)
+
+melt.final.data <- reshape2::melt(final.data, id=c("YEAR", "Source"))
+
+```
+
+# Make your life easy and save custom themes
+
+```{r plot.theme}
+
+bar_chart_text_theme <- theme(axis.title.x = element_text(margin=margin(t=5,r=0,b=0,l=0), size = 12), axis.text.y = element_text(margin=margin(t=0,r=0,b=0,l=5), size = 10), axis.text.x.bottom = element_text(margin=margin(t=10,r=0,b=0,l=0), size = 10, angle = 65), axis.title.y = element_text(size = 12), strip.text = element_text(size=10), panel.spacing = unit(0.5, "cm"))
+
+bar_chart_legend_theme <- theme(legend.title = element_blank(), legend.text = element_text(size = 10),legend.text.align = 0, legend.direction = "horizontal", legend.spacing = unit(0.001, 'cm'), legend.key.height = unit(1.52, 'cm'), legend.key.width = unit(1.5, 'cm'), legend.position="bottom")
+
+```
+
+# Plot outputs
+
+## Apendix Fig. D.1
+
+For comparable age classes (i.e., ages 0, 1, & 2), we compare simulated vs observed abundance values in number per thousands.
+
+```{r Apendix.Fig.D.1}
+
+melt.final.data2 <- melt.final.data %>% group_by(YEAR, Source) %>% summarise(value.all=sum(value))
+
+Validationplot_ALL <- ggplot(data=melt.final.data2, aes(x=YEAR, y=value.all, fill=Source))+
+  geom_bar(stat="identity", position=position_dodge())+
+  ylab("Number of Thousands")+
+  theme_bw()+
+  bar_chart_text_theme+
+  bar_chart_legend_theme+
+  guides(fill = guide_legend(byrow = TRUE))
+
+Validationplot_ALL
+
+```
+
+## Apendix Fig. D.2
+
+For Age 0 specifically (i.e., recruits), we compare simulated vs observed abundance values in number per thousands.
+
+```{r Apendix.Fig.D.2}
+
+Validationplot_age0 <- ggplot(data=melt.final.data[melt.final.data$variable=="Age0", ], aes(x=YEAR, y=value, fill=Source))+
+  geom_bar(stat="identity", position=position_dodge())+
+  ylab("Number of Thousands")+
+  theme_bw()+
+  bar_chart_text_theme+
+  bar_chart_legend_theme+
+  guides(fill = guide_legend(byrow = TRUE))
+
+Validationplot_age0
+
+```
+

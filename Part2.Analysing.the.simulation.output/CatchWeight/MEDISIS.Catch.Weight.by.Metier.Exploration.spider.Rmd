@@ -1,0 +1,461 @@
+---
+title: "MEDISIS Catch Weight and Catch Weight by Metier"
+author: "Stephanie Hopkins"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    toc: yes
+---
+
+```{r setup, include=FALSE, fig.width=6, fig.height=6}
+
+rm(list = ls())
+gc()
+
+knitr::opts_chunk$set(echo=TRUE, message=FALSE, results = "hide")
+
+list.of.packages <- c("data.table","tidyverse")
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+
+library(data.table)
+library(tidyverse)
+
+# To Replace with your file directory
+dir <- "C:/Users/steph/Documents"
+
+MEDISIS <- "/MEDISIS/Part2.Analysing.the.simulation.output/"
+
+path <- paste(dir,MEDISIS,sep="")
+
+```
+
+# Make your life easy and save custom themes
+
+```{r custom.theme, echo=TRUE}
+
+bar_chart_text_theme <- theme(axis.title.x = element_text(margin=margin(t=5,r=0,b=0,l=0), size = 14), axis.text.y = element_text(margin=margin(t=0,r=1,b=0,l=0), size = 12), axis.text.x.bottom = element_text(margin=margin(t=1,r=0,b=0,l=0), size = 12), axis.title.y = element_text(size = 14), strip.text = element_text(size=12), panel.spacing = unit(0.5, "cm")) 
+
+bar_chart_legend_theme <- theme(legend.title = element_blank(), legend.text = element_text(size = 12),legend.text.align = 0, legend.direction = "horizontal", legend.spacing = unit(0.001, 'cm'), legend.key.height = unit(1.52, 'cm'), legend.key.width = unit(1.5, 'cm'), legend.position="bottom")
+
+```
+
+# Create a custom colour palette
+
+Now that we are satisfied with the groupings, create a custom colour palette that matches colours with the: 2nd and 4th 3rd and 5th 7th and 8th 9th and 10th values.
+
+```{r colour.pallete, echo=TRUE}
+
+c_rel_diff <- c("#000000", #BLACK
+                "#0492C2", #CERULEAN
+                "#78C0f0", #SKY
+                "#008081", #TEAL
+                "#4F97A3", #TURKISH BLUE
+                "#CC9966", #TAN
+                "#a67556", #Brown
+                "#3DED97", #SEAFOAM
+                "#99EDC3", #MINT
+                "#32612D", #BASIL
+                "#597D35" #PICKLE
+) 
+
+#pie(rep(1, 11), col = c_rel_diff)
+
+```
+
+# Adjust the plot order
+
+```{r break.list, echo=TRUE}
+
+breaks_list <- c(
+  "StatusQuo",
+  "All-at-once Trawler Effort Reduction",
+  "All-at-once Effort Reduction Applied to All Gears",
+  "Gradual Trawler Effort Reduction",
+  "Gradual Effort Reduction Applied to All Gears",
+  "Seasonal Spatial Closure Single Effects",
+  "Annual Spatial Closure Single Effects",
+  "With 90-100m Isobaths Spatial Closure Combined Effects",
+  "Without 90-100m Isobaths Spatial Closure Combined Effects",
+  "Spatial Closure and Effort Reduction Combined Effects With the 90-100m Isobaths Closure",
+  "Spatial Closure and Effort Reduction Combined Effects Without the 90-100m Isobaths Closure")
+
+```
+
+# Load only catch weight
+
+```{r catch.weight, echo=TRUE}
+
+# 15706980 entries
+name_RData_6.4 <- 'catchWgtot_6.4_without-0s'
+
+catchWgtot_6.4 <- fread(paste(path, "Data/", name_RData_6.4,'.csv',sep=''))
+
+dim(catchWgtot_6.4)
+# [1] 14724396  8
+
+nameRDATA_clean <- 'catchWgtot_6.4_true_0s'
+
+catchWgtot_6.4_matched <-fread(paste(path, "Data/", nameRDATA_clean,'.csv',sep=''))
+
+dim(catchWgtot_6.4_matched)
+# [1] 9951444 8
+
+catchWgtot_6.4 <- rbind(catchWgtot_6.4, catchWgtot_6.4_matched)
+
+rm(catchWgtot_6.4_matched)
+
+```
+
+# Join the simulation design table to the simulation output
+
+Apply the names of the Scenarios in the column designating their numeric values and graft this to the Data.
+
+```{r simulation.bind, echo=TRUE}
+
+simuDesign <- '/MEDISIS/Part1.Reproducing.the.simulation.data/ISIS.Fish.Input.Tables/simulation_design_28'
+
+simulationDesign <- fread(paste(dir, simuDesign,".csv", sep=""), sep=';', h=F)
+
+colnames(simulationDesign) =  c('InitialAbundance','Recruitment','Connectivity','Scenarios')
+
+simulationDesign$simu <- seq(0, 503, 1)
+
+step <- unique(catchWgtot_6.4$step)
+nbYear <- length(step)/12 
+YEAR <- sort(rep(seq(2015,2014+nbYear,1), 12))
+MONTH <- rep(seq(1,12,1),nbYear)
+tabStep <- data.frame(step, YEAR, MONTH)
+
+catchWgtot_6.4 <- inner_join(catchWgtot_6.4, tabStep, by=c('step'))
+catchWgtot_6.4 <- inner_join(catchWgtot_6.4, simulationDesign, by=c('simu'))
+
+table_Sce_6.4 <- data.frame(Scenarios=as.character(c(0:27)),SceName=c("StatusQuo","Trawler_30_Red","Trawler_40_Red","Trawler_50_Red","Trawler_10_20_30","Trawler_10_17.5_25_32.5_40","Trawler_10_20_30_40_50","AllGears_30_Red","AllGears_40_Red","AllGears_50_Red","AllGears_10_20_30","AllGears_10_17.5_25_32.5_40","AllGears_10_20_30_40_50","Original_FRA_allYear","Northward_Expansion_of_FRA_Season","Northward_Expansion_of_FRA_allYear","90-100_Isobaths_Closure_Season","90-100_Isobaths_Closure_allYear","Offshore_Closures_Season","Offshore_Closures_allYear","Northward_Expansion_of_FRA_90-100m_Offshore_Closures_Combined","Northward_Expansion_of_FRA_90-100m_Offshore_allYear_Closures_Combined","Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures","Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures_allGears","Northward_Expansion_of_FRA_Offshore_Closures_Combined","Northward_Expansion_of_FRA_Offshore_allYear_Closures_Combined","Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures","Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures_allGears"))
+
+```
+
+# Filter data
+
+Note that while we parameterise OTB_XST_18-24 and OTM_CMT_18-24 in ISIS-Fish, these are not active metier or they do not target hake.
+
+```{r drop.inactive.metier, echo=TRUE}
+
+test.met <- subset(catchWgtot_6.4, metier %in% c("OTB_XST_18-24","OTM_CMT_18-24"))
+
+catchWgtot_6.4 <- subset(catchWgtot_6.4, !metier %in% c("OTB_XST_18-24","OTM_CMT_18-24"))
+
+dim(catchWgtot_6.4)
+# 23224320  14
+
+```
+
+# Combine all values into a single data table
+
+This part is broken into several smaller steps, but essentially we want to merge observation data and simplify the catch data. Calculate the total catch size and aggregate.
+
+```{r catch.table, echo=TRUE}
+
+# For Catch Weight by métier:
+catch_year_group_metier <- setNames(aggregate(value~metier+YEAR+group+simu+InitialAbundance+Recruitment+Connectivity+Scenarios,data=catchWgtot_6.4,sum),c("METIER","YEAR","GROUP","simu","InitialAbundance","Recruitment","Connectivity","Scenarios","Catch_wg"))
+
+catch_check1 <- subset(catch_year_group_metier, InitialAbundance == 0 & Recruitment == 0 & Connectivity == 0 & Scenarios == 16 & YEAR %in% c(2020, 2024))
+
+catch_check1.1 <- aggregate(Catch_wg ~ YEAR + METIER, data = catch_check1, FUN = sum)
+
+```
+
+# Isolate the reference scenario (StatusQuo with original params)
+
+Checking against the simulated results from the compiled data here and ISIS-Fish terminal, the same output is achieved. Here we choose StatusQuo scenario and the baseline assumptions for recruitment, initial abundance, or connectivity.
+
+```{r key.binding, echo=TRUE}
+
+catch_year_group_metier$CombiSimu <- 
+  paste0("Init", catch_year_group_metier$InitialAbundance,
+         "_Recr",catch_year_group_metier$Recruitment,
+         "_Conn", catch_year_group_metier$Connectivity,
+         "_Scen",catch_year_group_metier$Scenarios)
+
+catch_Ref_metier <- catch_year_group_metier[catch_year_group_metier$CombiSimu == "Init0_Recr0_Conn0_Scen0",]
+
+catch_Ref_metier <- as.data.frame(catch_Ref_metier[,c("METIER","YEAR","GROUP","Catch_wg")])
+
+names(catch_Ref_metier)[4] <- "Catch_ref_wg"
+
+catch_avec_ref_metier <- left_join(catch_year_group_metier, catch_Ref_metier,by=c("METIER","YEAR","GROUP"))
+
+# select only of reference simulations (cad: Init=0, Rec=0, Conn=0)
+catch_avec_ref_metier <- catch_avec_ref_metier[(catch_avec_ref_metier$InitialAbundance=="0" & catch_avec_ref_metier$Recruitment=="0" & catch_avec_ref_metier$Connectivity=="0"),]
+
+catch_avec_ref_metier <- as.data.table(catch_avec_ref_metier) 
+
+catch_year_ref_metier_part1 <- catch_avec_ref_metier[,list(Catch_sim_wg = sum(Catch_wg), Catch_ref_wg = sum(Catch_ref_wg)), by = list(METIER,YEAR, simu, InitialAbundance, Recruitment, Connectivity, Scenarios)]
+
+```
+
+# Create fleets 
+
+Note that for simplicity, we are reclassifying and generalizing fleets to demonstrate catch differences.
+
+```{r psuedo.fleet.summary, echo=TRUE}
+
+unique(catch_year_ref_metier_part1$METIER)
+colnames(catch_year_ref_metier_part1)
+
+catch_avec_ref_fleet <- catch_year_ref_metier_part1 %>% 
+  group_by(METIER) %>%
+  mutate(Gear = strsplit(METIER, "_")[[1]][1], Port = strsplit(METIER, "_")[[1]][2]) %>%
+  ungroup()
+
+unique(catch_avec_ref_fleet$Port)
+
+unique(catch_avec_ref_fleet$Scenarios)
+
+```
+
+For French Trawlers, isolate and compute CPUE.
+
+```{r French.trawl.fleet, echo=TRUE}
+
+Catch_fleet_French.trawl <- catch_avec_ref_fleet %>% 
+  filter(!Gear %in% c("LLS","GNS") & Port != "ESP") %>%
+  mutate(fleet = "French Trawlers") %>%
+  group_by(Scenarios, fleet, YEAR) %>%
+  summarise(Catch_sim_wg = sum(Catch_sim_wg), .groups = "keep") %>%
+  ungroup()
+
+Ref.Catch_fleet_French.trawl.agg <- Catch_fleet_French.trawl %>%
+  filter(Scenarios == 0) %>%
+  group_by(YEAR, fleet) %>%
+  summarise(Catch_sim_wg = sum(Catch_sim_wg)) %>%
+  ungroup() %>%
+  mutate(YEAR = as.character(YEAR))
+
+Ref.Catch_fleet_French.trawl <- Ref.Catch_fleet_French.trawl.agg %>%
+  filter(YEAR <="2017") %>%
+  mutate(Catch_ref_wg_mean = mean(Catch_sim_wg)) %>%
+  dplyr::select(Catch_ref_wg_mean, fleet)
+
+catch_year_ref.French.trawl <- full_join(Catch_fleet_French.trawl, Ref.Catch_fleet_French.trawl, by=c("fleet")) %>%
+  mutate(Rel_Diff_wg = (Catch_sim_wg - Catch_ref_wg_mean) / Catch_ref_wg_mean * 100) %>%
+  dplyr::select(c("YEAR","fleet","Scenarios","Rel_Diff_wg"))
+
+unique(is.na(catch_year_ref.French.trawl))
+
+catch_year_ref.French.trawl.part2 <- catch_year_ref.French.trawl %>%
+  mutate(Scenarios = as.factor(Scenarios)) %>% 
+  inner_join(.,table_Sce_6.4,by=c("Scenarios")) %>% 
+  mutate(SceName = factor(SceName, levels = table_Sce_6.4$SceName))
+
+```
+
+For French Gillnetters, isolate and compute CPUE.
+
+```{r French.gillnetter.fleet, echo=TRUE}
+
+Catch_fleet_French.gillnetters <- catch_avec_ref_fleet %>% 
+  filter(Gear == "GNS" & Port != "ESP") %>%
+  mutate(fleet = "French Gillnetters")
+
+Ref.Catch_fleet_French.gillnetters.agg <- Catch_fleet_French.gillnetters %>%
+  filter(Scenarios == 0) %>%
+  group_by(YEAR, fleet) %>%
+  summarise(Catch_sim_wg = sum(Catch_sim_wg)) %>%
+  ungroup() %>%
+  mutate(YEAR = as.character(YEAR))
+
+Ref.Catch_fleet_French.gillnetters <- Ref.Catch_fleet_French.gillnetters.agg %>%
+  filter(YEAR <="2017") %>%
+  mutate(Catch_ref_wg_mean = mean(Catch_sim_wg)) %>%
+  dplyr::select(Catch_ref_wg_mean, fleet)
+
+catch_year_ref.French.gillnetters <- full_join(Catch_fleet_French.gillnetters, Ref.Catch_fleet_French.gillnetters, by=c("fleet")) %>%
+  mutate(Rel_Diff_wg = (Catch_sim_wg - Catch_ref_wg_mean) / Catch_ref_wg_mean * 100) %>%
+  dplyr::select(c("YEAR","fleet","Scenarios","Rel_Diff_wg"))
+
+unique(is.na(catch_year_ref.French.gillnetters))
+
+catch_year_ref.French.gillnetters.part2 <- catch_year_ref.French.gillnetters %>%
+  mutate(Scenarios = as.factor(Scenarios)) %>%
+  inner_join(.,table_Sce_6.4,by=c("Scenarios")) %>% 
+  mutate(SceName = factor(SceName, levels = table_Sce_6.4$SceName))
+
+```
+
+For Spanish Trawlers, isolate and compute CPUE.
+
+```{r Spanish.trawl.fleet, echo=TRUE}
+
+Catch_fleet_Spanish.trawl <- catch_avec_ref_fleet %>% 
+  filter(Gear == "OTB" & Port == "ESP") %>%
+  mutate(fleet = "Spanish Trawlers")
+
+Ref.Catch_fleet_Spanish.trawl.agg <- Catch_fleet_Spanish.trawl %>%
+  filter(Scenarios == 0) %>%
+  group_by(YEAR, fleet) %>%
+  summarise(Catch_sim_wg = sum(Catch_sim_wg)) %>%
+  ungroup() %>%
+  mutate(YEAR = as.character(YEAR))
+
+Ref.Catch_fleet_Spanish.trawl <- Ref.Catch_fleet_Spanish.trawl.agg %>%
+  filter(YEAR <="2017") %>%
+  mutate(Catch_ref_wg_mean = mean(Catch_sim_wg)) %>%
+  dplyr::select(Catch_ref_wg_mean, fleet)
+
+catch_year_ref.Spanish.trawl <- full_join(Catch_fleet_Spanish.trawl, Ref.Catch_fleet_Spanish.trawl, by=c("fleet")) %>%
+  mutate(Rel_Diff_wg = (Catch_sim_wg - Catch_ref_wg_mean) / Catch_ref_wg_mean * 100) %>%
+  dplyr::select(c("YEAR","fleet","Scenarios","Rel_Diff_wg"))
+
+unique(is.na(catch_year_ref.Spanish.trawl))
+
+catch_year_ref.Spanish.trawl.part2 <- catch_year_ref.Spanish.trawl %>%
+  mutate(Scenarios = as.factor(Scenarios)) %>%
+  inner_join(.,table_Sce_6.4,by=c("Scenarios")) %>% 
+  mutate(SceName = factor(SceName, levels = table_Sce_6.4$SceName))
+
+```
+
+For Spanish Longliners, isolate, and compute CPUE.
+
+```{r spanish.longliner.fleet, echo=TRUE}
+
+Catch_fleet_Spanish.longliners <- catch_avec_ref_fleet %>% 
+  filter(Gear == "LLS" & Port == "ESP") %>%
+  mutate(fleet = "Spanish longliners")
+
+Ref.Catch_fleet_Spanish.longliners.agg <- Catch_fleet_Spanish.longliners %>%
+  filter(Scenarios == 0) %>%
+  group_by(YEAR, fleet) %>%
+  summarise(Catch_sim_wg = sum(Catch_sim_wg)) %>%
+  ungroup() %>%
+  mutate(YEAR = as.character(YEAR))
+
+Ref.Catch_fleet_Spanish.longliners <- Ref.Catch_fleet_Spanish.longliners.agg %>%
+  filter(YEAR <="2017") %>%
+  mutate(Catch_ref_wg_mean = mean(Catch_sim_wg)) %>%
+  dplyr::select(Catch_ref_wg_mean, fleet)
+
+catch_year_ref.Spanish.longliners <- full_join(Catch_fleet_Spanish.longliners, Ref.Catch_fleet_Spanish.longliners, by=c("fleet")) %>%
+  mutate(Rel_Diff_wg = (Catch_sim_wg - Catch_ref_wg_mean) / Catch_ref_wg_mean * 100) %>%
+  dplyr::select(c("YEAR","fleet","Scenarios","Rel_Diff_wg"))
+
+unique(is.na(catch_year_ref.Spanish.longliners))
+
+catch_year_ref.Spanish.longliners.part2 <- catch_year_ref.Spanish.longliners %>%
+  mutate(Scenarios = as.factor(Scenarios)) %>%
+  inner_join(.,table_Sce_6.4,by=c("Scenarios")) %>% 
+  mutate(SceName = factor(SceName, levels = table_Sce_6.4$SceName))
+
+```
+
+# Prepare new data frame
+
+Merge new fleet definition data.frames.
+
+```{r bind.rows, echo=TRUE}
+
+catch_year_ref_fleet_part2 <- rbind(catch_year_ref.French.trawl.part2, catch_year_ref.French.gillnetters.part2, catch_year_ref.Spanish.trawl.part2, catch_year_ref.Spanish.longliners.part2)
+
+```
+
+# Create groups by scenario type
+
+The original study investigates 28 scenario measures and 504 combinations. But we simplify this here for the international audience.
+
+```{r group.scen, echo=TRUE}
+
+dim(catch_year_ref_fleet_part2)
+Scenario_type <- seq(1:3360)
+
+catch_year_ref_fleet_part2 <- cbind(catch_year_ref_fleet_part2, Scenario_type)
+
+View(catch_year_ref_fleet_part2)
+
+catch_year_ref_fleet_part2$Scenario_type <- 
+  replace(catch_year_ref_fleet_part2$Scenario_type,c(1:30,841:870,1681:1710,2521:2550),"StatusQuo")
+
+catch_year_ref_fleet_part2$Scenario_type <- 
+  replace(catch_year_ref_fleet_part2$Scenario_type,c(31:120,871:960,1711:1800,2551:2640),"All-at-once Trawler Effort Reduction")
+
+catch_year_ref_fleet_part2$Scenario_type <- 
+  replace(catch_year_ref_fleet_part2$Scenario_type,c(211:300,1051:1140,1891:1980,2731:2820),"All-at-once Effort Reduction Applied to All Gears")
+
+catch_year_ref_fleet_part2$Scenario_type <- 
+  replace(catch_year_ref_fleet_part2$Scenario_type,c(121:210,961:1050,1801:1890,2641:2729),"Gradual Trawler Effort Reduction")
+
+catch_year_ref_fleet_part2$Scenario_type <- 
+  replace(catch_year_ref_fleet_part2$Scenario_type,c(301:390,1141:1230,1981:2070,2821:2910),"Gradual Effort Reduction Applied to All Gears")
+
+catch_year_ref_fleet_part2$Scenario_type <- 
+  replace(catch_year_ref_fleet_part2$Scenario_type,c(421:450,481:510,541:570,1261:1290,1321:1350,1381:1410,2101:2130,2161:2190,2221:2250,2941:2970,3001:3030,3061:3090),"Seasonal Spatial Closure Single Effects")
+
+catch_year_ref_fleet_part2$Scenario_type <- 
+  replace(catch_year_ref_fleet_part2$Scenario_type,c(391:420,451:480,511:540,571:600,1231:1260,1291:1320,1351:1380,1411:1440,2071:2100,2131:2160,2191:2220,2251:2280,2911:2940,2971:3000,3031:3060,3091:3120),"Annual Spatial Closure Single Effects")
+
+catch_year_ref_fleet_part2$Scenario_type <- 
+  replace(catch_year_ref_fleet_part2$Scenario_type,c(601:660,1441:1500,2281:2340,3121:3180),"With 90-100m Isobaths Spatial Closure Combined Effects")
+
+catch_year_ref_fleet_part2$Scenario_type <- 
+  replace(catch_year_ref_fleet_part2$Scenario_type,c(751:780,1591:1620,2431:2460,3271:3300,721:750,1561:1590,2401:2430,3241:3270),"Without 90-100m Isobaths Spatial Closure Combined Effects")
+
+catch_year_ref_fleet_part2$Scenario_type <- 
+  replace(catch_year_ref_fleet_part2$Scenario_type,c(661:720,1501:1560,2341:2400,3181:3240),"Spatial Closure and Effort Reduction Combined Effects With the 90-100m Isobaths Closure")
+
+catch_year_ref_fleet_part2$Scenario_type <- 
+  replace(catch_year_ref_fleet_part2$Scenario_type,c(781:840,1621:1680,2461:2520,3301:3360),"Spatial Closure and Effort Reduction Combined Effects Without the 90-100m Isobaths Closure")
+
+catch_year_ref_fleet_part2.df <- as.data.frame(catch_year_ref_fleet_part2)
+
+catch_year_ref_fleet_part2.df$Scenario_type <- as.factor(catch_year_ref_fleet_part2.df$Scenario_type)
+
+# View(catch_year_ref_fleet_part2.df)
+
+```
+
+Reorder the groups that we are interested in.
+
+```{r reorder, echo=TRUE}
+
+catch_year_ref_fleet_part2.df_reorder <- 
+  catch_year_ref_fleet_part2.df %>% mutate(
+    SceName_short = 
+      recode_factor(SceName,
+                  "StatusQuo"= "a",
+                  "Trawler_30_Red"= "b",
+                  "AllGears_30_Red" = "c",
+                  "Trawler_40_Red" = "d",
+                  "AllGears_40_Red"= "e",
+                  "Trawler_50_Red"= "f",
+                  "AllGears_50_Red"= "g",
+                  "Trawler_10_20_30"= "h",
+                  "AllGears_10_20_30"= "i",
+                  "Trawler_10_17.5_25_32.5_40"= "j",
+                  "AllGears_10_17.5_25_32.5_40"= "k",
+                  "Trawler_10_20_30_40_50"= "l",
+                  "AllGears_10_20_30_40_50"= "m",
+                  "Original_FRA_allYear"= "n",
+                  "Northward_Expansion_of_FRA_Season"= "o",
+                  "Northward_Expansion_of_FRA_allYear" = "p",
+                  "90-100_Isobaths_Closure_Season"= "q",
+                  "90-100_Isobaths_Closure_allYear"= "r", 
+                  "Offshore_Closures_Season"= "s",
+                  "Offshore_Closures_allYear"= "t",
+                  "Northward_Expansion_of_FRA_90-100m_Offshore_Closures_Combined"= "u",
+                  "Northward_Expansion_of_FRA_Offshore_Closures_Combined" = "v",
+                  "Northward_Expansion_of_FRA_90-100m_Offshore_allYear_Closures_Combined" = "w",
+                  "Northward_Expansion_of_FRA_Offshore_allYear_Closures_Combined" = "x",
+                  "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures"= "y",
+                  "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures"= "z",
+                  "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures_allGears"= "aa",
+                  "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures_allGears"= "bb"
+                ))
+
+```
+
+Save special group output.
+
+```{r save.output, echo=TRUE}
+
+fwrite(catch_year_ref_fleet_part2.df_reorder, file=paste(path, "fleet.catch.weight.by.year.csv", sep=""), sep=";")
+
+```

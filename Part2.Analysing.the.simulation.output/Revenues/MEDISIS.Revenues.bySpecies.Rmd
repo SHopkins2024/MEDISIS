@@ -1,0 +1,699 @@
+---
+title: "MEDISIS Revenue bySpecies"
+author: "Stephanie Hopkins"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document:
+    toc: yes
+---
+
+# Setup paths, data, and libraries
+
+```{r setup, include=FALSE}
+
+rm(list=ls())
+gc()
+
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE, message=FALSE, results = "hide")
+
+list.of.packages <- c("data.table","tidyverse","cowplot","ggpubr")
+
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+
+library(data.table)
+library(tidyverse)
+library(cowplot)
+library(gridExtra)
+library(ggpubr)
+
+# To Replace with your file directory
+dir <- "C:/Users/steph/Documents"
+
+MEDISIS <- "/MEDISIS/Part2.Analysing.the.simulation.output/"
+
+path <- paste(dir,MEDISIS,sep="")
+
+```
+
+# Make your life easy and save custom themes
+
+```{r custom.theme}
+
+bar_chart_text_theme <- theme(axis.title.x = element_text(margin=margin(t=5,r=0,b=0,l=0), size = 14), axis.text.y = element_text(margin=margin(t=0,r=1,b=0,l=0), size = 12), axis.text.x.bottom = element_text(margin=margin(t=1,r=0,b=0,l=0), size = 12), axis.title.y = element_text(size = 14), strip.text = element_text(size=12), panel.spacing = unit(0.5, "cm")) 
+
+bar_chart_legend_theme <- theme(legend.title = element_blank(), legend.text = element_text(size = 12),legend.text.align = 0, legend.direction = "horizontal", legend.spacing = unit(0.001, 'cm'), legend.key.height = unit(1.52, 'cm'), legend.key.width = unit(1.5, 'cm'), legend.position="bottom")
+
+```
+
+# Create a custom colour palette
+
+Now that we are satisfied with the groupings, create a custom colour palette that matches colours with the: 2nd and 4th 3rd and 5th 7th and 8th 9th and 10th values.
+
+```{r colour.pallete, echo=FALSE}
+
+c_rel_diff <- c("#000000", #BLACK
+                "#0492C2", #CERULEAN
+                "#78C0f0", #SKY
+                "#008081", #TEAL
+                "#4F97A3", #TURKISH BLUE
+                "#CC9966", #TAN
+                "#a67556", #Brown
+                "#3DED97", #SEAFOAM
+                "#99EDC3", #MINT
+                "#32612D", #BASIL
+                "#597D35" #PICKLE
+) 
+
+#pie(rep(1, 11), col = c_rel_diff)
+
+```
+
+# Adjust the plot order
+
+```{r break.list}
+
+breaks_list <- c(
+  "StatusQuo",
+  "All-at-once Trawler Effort Reduction",
+  "All-at-once Effort Reduction Applied to All Gears",
+  "Gradual Trawler Effort Reduction",
+  "Gradual Effort Reduction Applied to All Gears",
+  "Seasonal Spatial Closure Single Effects",
+  "Annual Spatial Closure Single Effects",
+  "With 90-100m Isobaths Spatial Closure Combined Effects",
+  "Without 90-100m Isobaths Spatial Closure Combined Effects",
+  "Spatial Closure and Effort Reduction Combined Effects With the 90-100m Isobaths Closure",
+  "Spatial Closure and Effort Reduction Combined Effects Without the 90-100m Isobaths Closure")
+
+```
+
+# Load RData file for all species besides hake
+
+Note that hake was dropped when the VPUE file was made because we will use price * catch weight for them. Here we will use VPUE * Effort to get Revenues.
+
+```{r revenue.value.data}
+
+load(file = paste(path, '/Data/effort_year_metier_vpue_taxon_distinct', '.RData', sep=''))
+
+dim(effort_year_metier_vpue_taxon_distinct)
+# [1] 17663760  15
+
+head(effort_year_metier_vpue_taxon_distinct)
+
+# For Revenues by taxon group:
+revenues_other_species_aggregated <- setNames(aggregate(Revenues~YEAR+TAXON_GROUP_NAME+simu+InitialAbundance+Recruitment+Connectivity+Scenarios,data=effort_year_metier_vpue_taxon_distinct,sum),c("YEAR","TAXON_GROUP_NAME","simu","InitialAbundance","Recruitment","Connectivity","Scenarios","Revenues"))
+
+# View(revenues_other_species_aggregated)
+
+colnames(effort_year_metier_vpue_taxon_distinct)
+
+unique(effort_year_metier_vpue_taxon_distinct$Recruitment)
+
+sort(unique(effort_year_metier_vpue_taxon_distinct$simu))
+
+```
+
+## Join the simulation design table to the simulation output
+
+Apply the names of the Scenarios in the column designating their numeric values and and graft this to the RData.
+
+```{r simulation.bind}
+
+simuDesign <- '/MEDISIS/Part1.Reproducing.the.simulation.data/ISIS.Fish.Input.Tables/simulation_design_28'
+
+simulationDesign <- fread(paste(dir, simuDesign,".csv", sep=""), sep=';', h=F)
+
+colnames(simulationDesign) =  c('InitialAbundance','Recruitment','Connectivity','Scenarios')
+
+simulationDesign$simu <- seq(0, 503, 1)
+
+# View(simulationDesign)
+
+revenues_other_species_aggregated <- inner_join(revenues_other_species_aggregated,
+                                                simulationDesign)
+
+View(revenues_other_species_aggregated)
+
+table_Sce_6.4 <- data.frame(Scenarios=as.numeric(c(0:27)),SceName=c("StatusQuo","Trawler_30_Red","Trawler_40_Red","Trawler_50_Red","Trawler_10_20_30","Trawler_10_17.5_25_32.5_40","Trawler_10_20_30_40_50","AllGears_30_Red","AllGears_40_Red","AllGears_50_Red","AllGears_10_20_30","AllGears_10_17.5_25_32.5_40","AllGears_10_20_30_40_50","Original_FRA_allYear","Northward_Expansion_of_FRA_Season","Northward_Expansion_of_FRA_allYear","90-100_Isobaths_Closure_Season","90-100_Isobaths_Closure_allYear","Offshore_Closures_Season","Offshore_Closures_allYear","Northward_Expansion_of_FRA_90-100m_Offshore_Closures_Combined","Northward_Expansion_of_FRA_90-100m_Offshore_allYear_Closures_Combined","Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures","Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures_allGears","Northward_Expansion_of_FRA_Offshore_Closures_Combined","Northward_Expansion_of_FRA_Offshore_allYear_Closures_Combined","Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures","Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures_allGears"))
+
+revenues_other_species <- inner_join(revenues_other_species_aggregated,
+                                     table_Sce_6.4, by="Scenarios")
+
+# View(revenues_other_species)
+
+```
+
+## Reference simulation
+
+Recall the the management scenarios are implemented in December of 2019.
+
+```{r key.binding, echo=FALSE}
+
+revenues_other_species$CombiSimu<-paste0("Init",revenues_other_species$InitialAbundance,"_Recr",revenues_other_species$Recruitment,"_Conn",revenues_other_species$Connectivity,"_Scen",revenues_other_species$Scenarios)
+
+revenues_other_species_Ref<-revenues_other_species[revenues_other_species$CombiSimu=="Init0_Recr0_Conn0_Scen0",]
+
+revenues_other_species_Ref <- 
+  as.data.frame(revenues_other_species_Ref[,c("TAXON_GROUP_NAME","YEAR","Revenues")])
+
+names(revenues_other_species_Ref)[3] <- "Revenues_ref"
+
+```
+
+## Isolate the reference scenario (StatusQuo with original params)
+
+Note that it is only possible to characterise revenues for the French fishing fleet. Checking against the simulated results from the compiled data here and ISIS-Fish terminal, will also yield the same output as before. We choose StatusQuo scenario and the baseline assumptions for recruitment, initial abundance, or connectivity again as well. However, this is treated differently than catch weight and biomass because effort is fixed in the model. It therefore does not make sense to compare these values with the average of the reference period. Instead, the last yearly effort values per metier are used for comparisons. As you would expect, there are no changes in effort by metier when the scenarios tested only involve spatial closures. There are some metier that are un affected and this is partly due to them not being as active in the 2015-2017 activity period. We further can only account for rough estimates so it does not make sense to look at monthly or higher scale revenue patterns, though VPUE is still calculated per month and metier. 
+
+```{r}
+
+revenues_avec_ref_taxon <-
+  left_join(revenues_other_species_Ref,
+            revenues_other_species,by=c("YEAR","TAXON_GROUP_NAME"))
+
+# select only of reference simulations (cad: Init=0, Rec=0, Conn=0)
+revenues_avec_ref_taxon <- revenues_avec_ref_taxon[(revenues_avec_ref_taxon$InitialAbundance=="0" & revenues_avec_ref_taxon$Recruitment=="0" & revenues_avec_ref_taxon$Connectivity=="0"),]
+
+```
+
+## Compute reference values
+
+```{r total.revues.by.species.ref}
+
+revenues_avec_ref_taxon <- as.data.table(revenues_avec_ref_taxon) 
+
+revenues_taxon_part1 <- revenues_avec_ref_taxon[,list(Revenues = sum(Revenues), Revenues_ref = sum(Revenues_ref)), by = list(YEAR, TAXON_GROUP_NAME, simu, InitialAbundance, Recruitment, Connectivity, Scenarios, SceName)]
+
+revenues_ref_taxon_aggregated <- subset(revenues_avec_ref_taxon, Scenarios==0)
+
+revenues_ref_taxon_aggregated <- 
+  aggregate(Revenues_ref~YEAR+TAXON_GROUP_NAME,
+            data=revenues_ref_taxon_aggregated,FUN=mean)
+
+revenues_ref_taxon_aggregated$YEAR <-
+  as.character(revenues_ref_taxon_aggregated$YEAR)
+
+revenues_ref_taxon_aggregated$Revenues_ref_mean <-
+  revenues_ref_taxon_aggregated$Revenues_ref
+
+revenues_ref_taxon_years <- subset(revenues_ref_taxon_aggregated,YEAR=="2017")
+
+revenues_ref_taxon_years <- revenues_ref_taxon_years[,-c(1,3)]
+
+revenues_ref_taxon_years
+
+```
+
+## Compute the relative difference
+
+Keep StatusQuo for comparison purposes, but add horizontal dashed line from the relative different weight value.
+
+```{r rel.diff.revenues.by.species}
+
+revenues_taxon_part1.1 <- merge(revenues_taxon_part1, revenues_ref_taxon_years,
+                                by = c("TAXON_GROUP_NAME"))
+
+unique(is.na(revenues_taxon_part1.1))
+
+unique(revenues_taxon_part1.1$Reveneus)
+
+revenues_taxon_part1.1$Diff_Rel_revenues <-
+  ((revenues_taxon_part1.1$Revenues - revenues_taxon_part1.1$Revenues_ref_mean) /
+     revenues_taxon_part1.1$Revenues_ref_mean) * 100
+
+# View(revenues_taxon_part1.1)
+
+unique(revenues_taxon_part1.1$Diff_Rel_revenues)
+
+unique(is.na(revenues_taxon_part1.1))
+
+```
+
+## Reorder the groups that we are interested in
+
+```{r revenues.by.species.reorder}
+
+revenues_taxon_part1.1_reorder <- 
+  revenues_taxon_part1.1 %>% mutate(
+    SceName_short = 
+      recode_factor(SceName,
+                    "StatusQuo"= "a",
+                    "Trawler_30_Red"= "b",
+                    "AllGears_30_Red" = "c",
+                    "Trawler_40_Red" = "d",
+                    "AllGears_40_Red"= "e",
+                    "Trawler_50_Red"= "f",
+                    "AllGears_50_Red"= "g",
+                    "Trawler_10_20_30"= "h",
+                    "AllGears_10_20_30"= "i",
+                    "Trawler_10_17.5_25_32.5_40"= "j",
+                    "AllGears_10_17.5_25_32.5_40"= "k",
+                    "Trawler_10_20_30_40_50"= "l",
+                    "AllGears_10_20_30_40_50"= "m",
+                    "Original_FRA_allYear"= "n",
+                    "Northward_Expansion_of_FRA_Season"= "o",
+                    "Northward_Expansion_of_FRA_allYear" = "p",
+                    "90-100_Isobaths_Closure_Season"= "q",
+                    "90-100_Isobaths_Closure_allYear"= "r", 
+                    "Offshore_Closures_Season"= "s",
+                    "Offshore_Closures_allYear"= "t",
+                    "Northward_Expansion_of_FRA_90-100m_Offshore_Closures_Combined"= "u",
+                    "Northward_Expansion_of_FRA_Offshore_Closures_Combined" = "v",
+                    "Northward_Expansion_of_FRA_90-100m_Offshore_allYear_Closures_Combined" = "w",
+                    "Northward_Expansion_of_FRA_Offshore_allYear_Closures_Combined" = "x",
+                    "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures"= "y",
+                    "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures"= "z",
+                    "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures_allGears"= "aa",
+                    "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures_allGears"= "bb"
+                ))
+
+```
+
+# For Hake Revenues
+
+# Load only catch weight
+
+```{r catch.weight}
+
+name_RData_6.4 <- 'catchWgtot_6.4_without-0s'
+
+catchWgtot_6.4 <- fread(paste(path, "Data/", name_RData_6.4,'.csv',sep=''))
+
+dim(catchWgtot_6.4)
+# [1] 14724396  8
+
+nameRDATA_clean <- 'catchWgtot_6.4_true_0s'
+
+catchWgtot_6.4_matched <-fread(paste(path, "Data/", nameRDATA_clean,'.csv',sep=''))
+
+dim(catchWgtot_6.4_matched)
+# [1] 9951444 8
+
+catchWgtot_6.4 <- rbind(catchWgtot_6.4, catchWgtot_6.4_matched)
+
+rm(catchWgtot_6.4_matched)
+
+sort(unique(catchWgtot_6.4$simu))
+
+```
+
+# Join the simulation design table to the simulation output
+
+Apply the names of the Scenarios in the column designating their numeric values and graft this to the Data.
+
+```{r simulation.bind}
+
+step <- unique(catchWgtot_6.4$step)
+nbYear <- length(step)/12 
+YEAR <- sort(rep(seq(2015,2014+nbYear,1), 12))
+MONTH <- rep(seq(1,12,1),nbYear)
+tabStep <- data.frame(step, YEAR, MONTH)
+
+catchWgtot_6.4 <- inner_join(catchWgtot_6.4, tabStep, by=c('step'))
+catchWgtot_6.4 <- inner_join(catchWgtot_6.4, simulationDesign, by=c('simu'))
+
+```
+
+# Filter data
+
+Note that while we parameterise OTB_XST_18-24 and OTM_CMT_18-24 in ISIS-Fish, these are not active metier or they do not target hake. We also do not have revenue information for the Spanish fleet so remove Spanish_Strategy
+
+```{r drop.inactive.metier}
+
+catchWgtot_6.4 <- catchWgtot_6.4 %>%
+  filter(!metier %in% c("OTB_XST_18-24","OTM_CMT_18-24") & strategy != "Spanish_Strategy")
+
+dim(catchWgtot_6.4)
+# 21772800  14
+
+head(catchWgtot_6.4)
+
+unique(catchWgtot_6.4$strategy)
+unique(catchWgtot_6.4$metier)
+
+```
+
+# Calculate hake revenues across all scenarios
+
+```{r calculate.hake.revenues}
+
+# For Global Catch Weight:
+catch_year_group <- setNames(aggregate(value~YEAR+MONTH+simu+InitialAbundance+Recruitment+Connectivity+Scenarios,data=catchWgtot_6.4,sum),c("YEAR","MONTH","simu","InitialAbundance","Recruitment","Connectivity","Scenarios","Catch_wg"))
+
+TABLE_price_month <- 
+  fread(paste(path,"Data/Revenues/Monthly_Average_Hake_Prices_in_2017.csv", sep=""), sep = ",")
+
+names(TABLE_price_month) <- c("MONTH","Price")
+
+catchweight_price <- merge(catch_year_group, TABLE_price_month, by=c("MONTH"))
+
+catchweight_price$REVENUES <- catchweight_price$Catch_wg * catchweight_price$Price
+
+View(catchweight_price)
+
+save(catchweight_price, file = paste(path, 'Data/Revenues_hake',
+                                     '.RData', sep=''))
+
+```
+
+## Reference simulation
+
+This is essentially out base line values for each scenario. Therefore, InitialAbundance = 0, Recruitment = 0, and Connectivity = 0. This will serve as a fishing as normal scenario with no assumptions. While we could just take the value at 2017, for the uncertainty analysis we want to compare all CombiSimu combinations to the base scenario. This is why we are keeping all years at this stage.
+
+```{r key.binding}
+
+# For Revenues for hake:
+revenues_hake <- catchweight_price %>% group_by(YEAR, simu, Recruitment,InitialAbundance,Connectivity,Scenarios) %>%
+  summarise(Revenues = sum(REVENUES), .groups = "keep")
+  
+revenues_hake$CombiSimu <- paste0("Init",revenues_hake$InitialAbundance,"_Recr",revenues_hake$Recruitment,"_Conn",revenues_hake$Connectivity,"_Scen",revenues_hake$Scenarios)
+
+revenues_hake_Ref <- revenues_hake[revenues_hake$CombiSimu=="Init0_Recr0_Conn0_Scen0",]
+
+revenues_hake_Ref <- as.data.frame(revenues_hake_Ref[,c("YEAR","Revenues")])
+
+names(revenues_hake_Ref)[2] <- "Revenues_ref"
+
+revenues_hake_Ref
+
+```
+
+## Isolate the reference scenario (StatusQuo with original params)
+
+Checking against the simulated results from the compiled data here and ISIS-Fish terminal, the same output is achieved. Here we choose StatusQuo scenario and the baseline assumptions for recruitment, initial abundance, or connectivityThis is treated differently than catch weight and biomass begin month because effort is fixed in the model. It therefore does not make sense to compare these values with the average of the reference period. Instead, the last yearly effort values per metier are used for comparisons. As you would expect, there are no changes in effort by metier when the scenarios tested only involve spatial closures. There are some metier that are un affected and this is partly due to them not being as active in the 2015-2017 activity period. We further can only account for rough estimates so it does not make sense to look at monthly or higher scale revenue patterns, though VPUE is still calculated per month and metier. 
+
+```{r reference.scenario}
+
+revenues_avec_ref_hake <- left_join(revenues_hake, revenues_hake_Ref, by=c("YEAR"))
+
+# select only of reference simulations (cad: Init=0, Rec=0, Conn=0)
+revenues_avec_ref_hake <- revenues_avec_ref_hake[(revenues_avec_ref_hake$InitialAbundance=="0" & revenues_avec_ref_hake$Recruitment=="0" & revenues_avec_ref_hake$Connectivity=="0"),]
+
+revenues_avec_ref_hake <- as.data.table(revenues_avec_ref_hake)
+
+test <- revenues_avec_ref_hake %>%
+  filter(YEAR == 2017 & InitialAbundance=="0" & Connectivity=="0" & Recruitment=="0")
+
+test
+
+```
+
+## Compute reference value
+
+```{r hake.revenues.ref}
+
+revenues_hake_part1 <- revenues_avec_ref_hake[,list(Revenues = sum(Revenues), Revenues_ref = sum(Revenues_ref)), by = list(YEAR, simu, InitialAbundance, Recruitment, Connectivity, Scenarios)]
+
+revenues_hake_part1$TAXON_GROUP_NAME <- "Merluccius merluccius"
+
+revenues_ref_hake_aggregated <- subset(revenues_hake_part1, Scenarios==0)
+
+revenues_ref_hake_years <- subset(revenues_ref_hake_aggregated,YEAR=="2017")
+
+revenues_ref_hake_years <- revenues_ref_hake_years[,-c(1,3)]
+
+colnames(revenues_ref_hake_years)
+
+Revenues_ref_mean <- revenues_ref_hake_years$Revenues_ref
+Revenues_ref_mean
+
+```
+
+## Compute the relative difference
+
+Keep StatusQuo for comparison purposes, but add horizontal dashed line from the relative different weight value.
+
+```{r rel.diff.hake.revenues}
+
+unique(is.na(revenues_hake_part1))
+
+revenues_hake_part1$Revenues_ref_mean <- Revenues_ref_mean
+
+revenues_hake_part1$Diff_Rel_revenues <- 
+  (revenues_hake_part1$Revenues - revenues_hake_part1$Revenues_ref_mean) / revenues_hake_part1$Revenues_ref_mean * 100
+
+View(revenues_taxon_part1)
+
+unique(revenues_hake_part1$Diff_Rel_revenues)
+
+
+unique(is.na(revenues_hake_part1))
+
+```
+
+## Prepare the data frame
+
+Here we are interested in the global catch weight only, so while effort reduction is applied at the metier level, we are only looking at the general patterns at this stage.
+
+```{r hake.prep}
+
+revenues_hake_part2 <-
+  merge(revenues_hake_part1,table_Sce_6.4,by=c("Scenarios")) %>%
+  mutate(Scenarios = as.factor(as.numeric(revenues_hake_part1$Scenarios)))
+
+revenues_hake_part2$SceName <- factor(revenues_hake_part2$SceName, levels = table_Sce_6.4$SceName)
+
+```
+
+## Reorder the groups that we are interested in
+
+```{r hake.revenues.reorder}
+
+revenues_hake_part2_reorder <- 
+  revenues_hake_part2 %>% mutate(
+    SceName_short = 
+      recode_factor(SceName,
+                    "StatusQuo"= "a",
+                    "Trawler_30_Red"= "b",
+                    "AllGears_30_Red" = "c",
+                    "Trawler_40_Red" = "d",
+                    "AllGears_40_Red"= "e",
+                    "Trawler_50_Red"= "f",
+                    "AllGears_50_Red"= "g",
+                    "Trawler_10_20_30"= "h",
+                    "AllGears_10_20_30"= "i",
+                    "Trawler_10_17.5_25_32.5_40"= "j",
+                    "AllGears_10_17.5_25_32.5_40"= "k",
+                    "Trawler_10_20_30_40_50"= "l",
+                    "AllGears_10_20_30_40_50"= "m",
+                    "Original_FRA_allYear"= "n",
+                    "Northward_Expansion_of_FRA_Season"= "o",
+                    "Northward_Expansion_of_FRA_allYear" = "p",
+                    "90-100_Isobaths_Closure_Season"= "q",
+                    "90-100_Isobaths_Closure_allYear"= "r", 
+                    "Offshore_Closures_Season"= "s",
+                    "Offshore_Closures_allYear"= "t",
+                    "Northward_Expansion_of_FRA_90-100m_Offshore_Closures_Combined"= "u",
+                    "Northward_Expansion_of_FRA_Offshore_Closures_Combined" = "v",
+                    "Northward_Expansion_of_FRA_90-100m_Offshore_allYear_Closures_Combined" = "w",
+                    "Northward_Expansion_of_FRA_Offshore_allYear_Closures_Combined" = "x",
+                    "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures"= "y",
+                    "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures"= "z",
+                    "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures_allGears"= "aa",
+                    "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures_allGears"= "bb"
+                ))
+
+```
+
+# Merge Hake and Other Species Revenues
+
+```{r join.revenue.data.frames}
+
+colnames(revenues_hake_part2_reorder)
+
+unique(is.na(revenues_hake_part2_reorder))
+
+colnames(revenues_taxon_part1.1_reorder)
+
+unique(is.na(revenues_taxon_part1.1_reorder))
+
+str(revenues_taxon_part1.1_reorder)
+
+revenues_taxon_part1.1_reorder$Scenarios <-
+  as.character(revenues_taxon_part1.1_reorder$Scenarios)
+
+Revenues_all_species <- rbind(revenues_hake_part2_reorder,
+                              revenues_taxon_part1.1_reorder)
+
+View(Revenues_all_species)
+
+Revenues_all_species$TAXON_GROUP_NAME <-
+  as.factor(Revenues_all_species$TAXON_GROUP_NAME)
+
+```
+
+# Create groups by scenario type
+
+```{r scenario.group.measures}
+
+Revenues_all_species_reorder <- 
+  Revenues_all_species %>% mutate(
+    Scenario_type = 
+      recode_factor(SceName_short,
+                    "a" = "StatusQuo",
+                    "b" = "All-at-once Trawler Effort Reduction",
+                    "c" = "All-at-once Effort Reduction Applied to All Gears",
+                    "d" = "All-at-once Trawler Effort Reduction",
+                    "e" = "All-at-once Effort Reduction Applied to All Gears",
+                    "f" = "All-at-once Trawler Effort Reduction",
+                    "g" = "All-at-once Effort Reduction Applied to All Gears",
+                    "h" = "Gradual Trawler Effort Reduction",
+                    "i" = "Gradual Effort Reduction Applied to All Gears",
+                    "j" = "Gradual Trawler Effort Reduction",
+                    "k" = "Gradual Effort Reduction Applied to All Gears",
+                    "l" = "Gradual Trawler Effort Reduction",
+                    "m" = "Gradual Effort Reduction Applied to All Gears",
+                    "n" = "Annual Spatial Closure Single Effects",
+                    "o" = "Seasonal Spatial Closure Single Effects",
+                    "p" = "Annual Spatial Closure Single Effects",
+                    "q" = "Seasonal Spatial Closure Single Effects",
+                    "r" = "Annual Spatial Closure Single Effects", 
+                    "s" = "Seasonal Spatial Closure Single Effects",
+                    "t" = "Annual Spatial Closure Single Effects",
+                    "u" = "With 90-100m Isobaths Spatial Closure Combined Effects",
+                    "v" = "Without 90-100m Isobaths Spatial Closure Combined Effects",
+                    "w" = "With 90-100m Isobaths Spatial Closure Combined Effects",
+                    "x" = "Without 90-100m Isobaths Spatial Closure Combined Effects",
+                    "y" = "Spatial Closure and Effort Reduction Combined Effects With the 90-100m Isobaths Closure",
+                    "z" = "Spatial Closure and Effort Reduction Combined Effects Without the 90-100m Isobaths Closure",
+                    "aa" = "Spatial Closure and Effort Reduction Combined Effects With the 90-100m Isobaths Closure",
+                    "bb" ="Spatial Closure and Effort Reduction Combined Effects Without the 90-100m Isobaths Closure"))
+
+Revenues_all_species_reorder <- as.data.frame(Revenues_all_species_reorder)
+
+Revenues_all_species_reorder$Scenario_type <-
+  as.factor(Revenues_all_species_reorder$Scenario_type)
+
+```
+
+# Save revenues output
+
+```{r save.revenue.output}
+
+fwrite(Revenues_all_species_reorder, file=paste(path, "Data/revenues.by.species.2017.csv", sep=""), sep=";")
+
+```
+
+# Create panel figures
+
+These will be more useful for the paper. Note that the tagger needs to be added after the figures are made due to conflicts.
+
+## Install packages
+
+```{r set.up.pannels}
+
+list.of.packages2 <- c("prettyunits","htmlwidgets","checkmate","devtools")
+new.packages <- list.of.packages2[!(list.of.packages2 %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+
+tagger.package <- "tagger"
+new.tagger <- tagger.package[!(tagger.package %in% installed.packages()[,"Package"])]
+if(length(new.tagger)) devtools::install_github("eliocamp/tagger")
+
+library(tagger) #For tag_facet
+
+```
+
+One-step for loop plotting:
+
+```{r, plot.revenues.by.species}
+
+species_revenue_plots  = F
+
+if (species_revenue_plots == FALSE){
+  
+  for (s in unique(Revenues_all_species_reorder$TAXON_GROUP_NAME)){
+    
+    species_subset <- Revenues_all_species_reorder[Revenues_all_species_reorder$TAXON_GROUP_NAME == s,]
+  
+    print(s)
+  
+    species.revenue.plots.yr5 <-
+      ggplot(data = species_subset[species_subset$YEAR==2024,]) +
+             aes(x=SceName_short,y=Diff_Rel_revenues,fill=Scenario_type) + 
+             geom_bar(stat="identity") + 
+             geom_hline(data=species_subset %>%
+                          filter(Scenario_type=="StatusQuo" & YEAR==2024),
+                        aes(yintercept=Diff_Rel_revenues), colour="black",
+                        linewidth=0.75, linetype="dashed") +
+      scale_fill_manual(values=c_rel_diff, breaks=breaks_list,
+                        labels=str_wrap(breaks_list,25)) +
+      labs(fill=" ")+
+      xlab("Scenario Code")+
+      ylab("Percent Change in Revenues from Reference Period")+
+      geom_hline(yintercept=0)+ 
+      theme_bw()+
+      bar_chart_text_theme+ 
+      bar_chart_legend_theme+
+      guides(fill = guide_legend(byrow = TRUE))
+  
+    species.revenue.plots.yr1 <-
+      ggplot(data = species_subset[species_subset$YEAR==2020,]) +
+      aes(x=SceName_short,y=Diff_Rel_revenues,fill=Scenario_type) + 
+      geom_bar(stat="identity") + 
+      geom_hline(data=species_subset %>%
+                   filter(Scenario_type=="StatusQuo"&YEAR==2020),
+                 aes(yintercept=Diff_Rel_revenues), colour="black",
+                 linewidth=0.75, linetype="dashed") +
+      scale_fill_manual(values=c_rel_diff, breaks=breaks_list,
+                      labels=str_wrap(breaks_list,25)) +
+      labs(fill=" ") +
+      xlab("Scenario Code") +
+      ylab("Percent Change in Revenues from Reference Period") +
+      geom_hline(yintercept=0) + 
+      theme_bw() +
+      bar_chart_text_theme + 
+      bar_chart_legend_theme +
+      guides(fill = guide_legend(byrow = TRUE))
+    
+    TotalFrenchRevenues_alltaxon <- ggarrange(species.revenue.plots.yr1 +
+                                                tag_facets(tag = "panel",
+                                                           tag_pool= "Year 1",
+                                                           tag_prefix = "",
+                                                           tag_suffix = "",
+                                                           tag_sep = "."),
+                                              species.revenue.plots.yr5 +
+                                                tag_facets(tag = "panel",
+                                                           tag_pool= "Year 5",
+                                                           tag_prefix = "",
+                                                           tag_suffix = "",
+                                                           tag_sep = ".") +
+                                                rremove("ylab"),
+                                              ncol=2,nrow=1,align="hv",
+                                              widths=c(1,1),heights=c(1,1),
+                                              common.legend=TRUE,
+                                              legend="bottom", hjust=0,
+                                              vjust=-0.25)
+    
+    file.name <- paste0(s, "_Revenues_panel", sep = '')
+    
+    ggsave2(filename=paste("Relative_difference_in_",file.name,".pdf", sep=""),
+            plot=TotalFrenchRevenues_alltaxon, device="pdf", 
+            path=paste(path, "Figures/", sep=""), dpi=1200, width = 29.7,
+            height=21, unit="cm", limitsize = FALSE)
+  
+  }
+}
+
+```
+
+## Exact numbers of relative change 
+
+Here we apply basic computations to highlight main points in the results section.
+
+```{r exact.vals.comp.1}
+
+percent.merlu.yr5 <- Revenues_all_species_reorder %>%
+  filter(YEAR==2024&TAXON_GROUP_NAME=="Merluccius merluccius"&Scenarios %in%
+           c(0:12,24:25,28:29))
+
+statuval.yr5.merlu <- percent.merlu.yr5 %>%
+  filter(SceName_short == "a")
+
+percent.merlu.yr5$diffstatu <- 
+  ((percent.merlu.yr5$Diff_Rel_revenues - statuval.yr5.merlu$Diff_Rel_revenues) /
+     abs(statuval.yr5.merlu$Diff_Rel_revenues))*100
+
+View(percent.merlu.yr5)
+
+```

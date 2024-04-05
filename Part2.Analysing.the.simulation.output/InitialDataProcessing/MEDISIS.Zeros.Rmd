@@ -1,0 +1,526 @@
+---
+title: "MEDISIS Treatment of Zeros"
+author: "Stephanie Hopkins"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document:
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+
+rm(list = ls())
+gc()
+
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(message = FALSE)
+
+list.of.packages <- c("data.table","tidyverse")
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+
+library(data.table)
+library(tidyverse)
+
+# To Replace with your file directory
+dir <- dir <- "C:/Users/steph/Documents"
+
+# Folder path in directory to save outputs
+pathRData_6.4 <- "/MEDISIS/Part2.Analysing.the.simulation.output/Data/" 
+
+```
+
+# Subset matching strategies and metiers
+
+Because the way data is aggregated (uses averages throughout the scripts), It is necessary to clean the data first in three steps. The first step is to isolate zero values (data formation script). After that, we filter the data to keep on the metier that belong to the strategy. Lastly, this is joined with the non-zero data file made (also in the data formation script).
+
+## For catch weight values
+
+For space, ".csv" was used without compression. Furthermore, the catch weight data was broken into 4 chunks, which will later be joined into a single file.
+
+For Chunk 1 of Catch Weight
+
+```{r catch_Weight_zeros_chunk1, echo=TRUE}
+
+name_RData_6.4_catchweight <- 'catchWgtot_6.4-0s_only_chunk1'
+  
+catchWgtot_6.4 <- fread(paste(dir, pathRData_6.4, name_RData_6.4_catchweight,'.CSV', sep = ''))
+
+catchWgtot_6.4_to_match = tibble(catchWgtot_6.4)
+rm(catchWgtot_6.4)
+
+catchWgtot_6.4_to_match$set <- 
+  paste(catchWgtot_6.4_to_match$metier,
+        catchWgtot_6.4_to_match$strategy)
+
+# (number of pairs) pairs
+pairs <- data.frame(unique(catchWgtot_6.4_to_match$set))
+# View(pairs)
+
+# Assign column names
+names(pairs)[1] <- "set"
+
+#---------------------------------------------------------------------------------------
+# To subset based on port in Strategy:
+
+# Create  port id
+pairs$port <- substr(pairs$set, 5, 7)
+
+# Recall that Spanish fleets and Gill netters do not have a port
+other_ports <- c("FRA", "ESP")
+
+# Select all ports where French trawlers exist
+pairs_french_trawlers <- subset(pairs, !port %in% other_ports)
+
+# If the port id is not present in the strategy part of the set, assign an NA value
+pairs_french_trawlers$port[substr(pairs_french_trawlers$set, 15, 17)!= pairs_french_trawlers$port] <- NA
+
+#---------------------------------------------------------------------------------------
+# To subset based on vessel size in Strategy:
+
+# Create a vesselSize id
+pairs_french_trawlers$vesselSize <- substr(pairs_french_trawlers$set, 9, 13)
+
+# If the vesselSize id is not present in the strategy part of the set, assign an NA value
+pairs_french_trawlers$vesselSize[substr(pairs_french_trawlers$set, 19, 23)!= pairs_french_trawlers$vesselSize] <- NA
+
+# Remove all false zeros so far
+pairs_french_trawlers_clean <- na.omit(pairs_french_trawlers)
+
+#---------------------------------------------------------------------------------------
+# To subset based on gear in Strategy:
+
+# Create a gear id
+pairs_french_trawlers_clean$gear <- substr(pairs_french_trawlers_clean$set, 1, 3)
+
+# Subset strategy from set string based on everything after the space
+pairs_french_trawlers_clean$strategy <- sub("^\\S+\\s+", '', pairs_french_trawlers_clean$set)
+
+# Set condition
+test.gear <- gsub(" ", "|", pairs_french_trawlers_clean$gear)
+# Apply condition
+i <- mapply(\(x, y)grepl(x, y), test.gear, pairs_french_trawlers_clean$strategy)
+# Create flag
+pairs_french_trawlers_clean <- pairs_french_trawlers_clean %>% 
+  mutate(flag = c("No", "Yes")[i + 1L]) %>%
+  filter(flag == "Yes")
+
+#---------------------------------------------------------------------------------------
+# For all others
+
+match.others <- catchWgtot_6.4_to_match %>% 
+  mutate(port = (substr(metier, 5, 7))) %>%
+  filter(port == "FRA" & strategy == "FrenchGillnetters" | port == "ESP" & strategy == "Spanish_Strategy")
+
+head(match.others)
+
+#---------------------------------------------------------------------------------------
+# Apply filters and save:
+
+catchWgtot_6.4_matched <- catchWgtot_6.4_to_match %>% 
+  filter(set %in% match.others$set | set %in% pairs_french_trawlers_clean$set)
+
+colnames(catchWgtot_6.4_matched)
+
+# Remove set
+catchWgtot_6.4_matched <- catchWgtot_6.4_matched[,-9]
+# View(catchWgtot_6.4_matched)
+
+fwrite(catchWgtot_6.4_matched, file = paste(dir, pathRData_6.4, 'CatchWgtot_6.4-0s_onlytrue_0s_chunk1.csv', sep = ''), sep = ";", compress = "none")
+
+```
+
+For Chunk 2 of Catch Weight
+
+```{r catch_Weight_zeros_chunk2, echo=TRUE}
+
+name_RData_6.4_catchweight <- 'catchWgtot_6.4-0s_only_chunk2'
+  
+catchWgtot_6.4 <- fread(paste(dir, pathRData_6.4, name_RData_6.4_catchweight,'.CSV', sep = ''))
+
+catchWgtot_6.4_to_match = tibble(catchWgtot_6.4)
+rm(catchWgtot_6.4)
+
+catchWgtot_6.4_to_match$set <- 
+  paste(catchWgtot_6.4_to_match$metier,
+        catchWgtot_6.4_to_match$strategy)
+
+# (number of pairs) pairs
+pairs <- data.frame(unique(catchWgtot_6.4_to_match$set))
+# View(pairs)
+
+# Assign column names
+names(pairs)[1] <- "set"
+
+#---------------------------------------------------------------------------------------
+# To subset based on port in Strategy:
+
+# Create  port id
+pairs$port <- substr(pairs$set, 5, 7)
+
+# Recall that Spanish fleets and Gill netters do not have a port
+other_ports <- c("FRA", "ESP")
+
+# Select all ports where French trawlers exist
+pairs_french_trawlers <- subset(pairs, !port %in% other_ports)
+
+# If the port id is not present in the strategy part of the set, assign an NA value
+pairs_french_trawlers$port[substr(pairs_french_trawlers$set, 15, 17)!= pairs_french_trawlers$port] <- NA
+
+#---------------------------------------------------------------------------------------
+# To subset based on vessel size in Strategy:
+
+# Create a vesselSize id
+pairs_french_trawlers$vesselSize <- substr(pairs_french_trawlers$set, 9, 13)
+
+# If the vesselSize id is not present in the strategy part of the set, assign an NA value
+pairs_french_trawlers$vesselSize[substr(pairs_french_trawlers$set, 19, 23)!= pairs_french_trawlers$vesselSize] <- NA
+
+# Remove all false zeros so far
+pairs_french_trawlers_clean <- na.omit(pairs_french_trawlers)
+
+#---------------------------------------------------------------------------------------
+# To subset based on gear in Strategy:
+
+# Create a gear id
+pairs_french_trawlers_clean$gear <- substr(pairs_french_trawlers_clean$set, 1, 3)
+
+# Subset strategy from set string based on everything after the space
+pairs_french_trawlers_clean$strategy <- sub("^\\S+\\s+", '', pairs_french_trawlers_clean$set)
+
+# Set condition
+test.gear <- gsub(" ", "|", pairs_french_trawlers_clean$gear)
+# Apply condition
+i <- mapply(\(x, y)grepl(x, y), test.gear, pairs_french_trawlers_clean$strategy)
+# Create flag
+pairs_french_trawlers_clean <- pairs_french_trawlers_clean %>% 
+  mutate(flag = c("No", "Yes")[i + 1L]) %>%
+  filter(flag == "Yes")
+
+#---------------------------------------------------------------------------------------
+# For all others
+
+match.others <- catchWgtot_6.4_to_match %>% 
+  mutate(port = (substr(metier, 5, 7))) %>%
+  filter(port == "FRA" & strategy == "FrenchGillnetters" | port == "ESP" & strategy == "Spanish_Strategy")
+
+head(match.others)
+
+#---------------------------------------------------------------------------------------
+# Apply filters and save:
+
+catchWgtot_6.4_matched <- catchWgtot_6.4_to_match %>% 
+  filter(set %in% match.others$set | set %in% pairs_french_trawlers_clean$set)
+
+colnames(catchWgtot_6.4_matched)
+
+# Remove set
+catchWgtot_6.4_matched <- catchWgtot_6.4_matched[,-9]
+# View(catchWgtot_6.4_matched)
+
+fwrite(catchWgtot_6.4_matched, file = paste(dir, pathRData_6.4, 'CatchWgtot_6.4-0s_onlytrue_0s_chunk2.csv', sep = ''), sep = ";", compress = "none")
+
+```
+
+For Chunk 3 of Catch Weight
+
+```{r catch_Weight_zeros_chunk3, echo=TRUE}
+
+name_RData_6.4_catchweight <- 'catchWgtot_6.4-0s_only_chunk3'
+  
+catchWgtot_6.4 <- fread(paste(dir, pathRData_6.4, name_RData_6.4_catchweight,'.CSV', sep = ''))
+
+catchWgtot_6.4_to_match = tibble(catchWgtot_6.4)
+rm(catchWgtot_6.4)
+
+catchWgtot_6.4_to_match$set <- 
+  paste(catchWgtot_6.4_to_match$metier,
+        catchWgtot_6.4_to_match$strategy)
+
+# (number of pairs) pairs
+pairs <- data.frame(unique(catchWgtot_6.4_to_match$set))
+#View(pairs)
+
+# Assign column names
+names(pairs)[1] <- "set"
+
+#---------------------------------------------------------------------------------------
+# To subset based on port in Strategy:
+
+# Create  port id
+pairs$port <- substr(pairs$set, 5, 7)
+
+# Recall that Spanish fleets and Gill netters do not have a port
+other_ports <- c("FRA", "ESP")
+
+# Select all ports where French trawlers exist
+pairs_french_trawlers <- subset(pairs, !port %in% other_ports)
+
+# If the port id is not present in the strategy part of the set, assign an NA value
+pairs_french_trawlers$port[substr(pairs_french_trawlers$set, 15, 17)!= pairs_french_trawlers$port] <- NA
+
+#---------------------------------------------------------------------------------------
+# To subset based on vessel size in Strategy:
+
+# Create a vesselSize id
+pairs_french_trawlers$vesselSize <- substr(pairs_french_trawlers$set, 9, 13)
+
+# If the vesselSize id is not present in the strategy part of the set, assign an NA value
+pairs_french_trawlers$vesselSize[substr(pairs_french_trawlers$set, 19, 23)!= pairs_french_trawlers$vesselSize] <- NA
+
+# Remove all false zeros so far
+pairs_french_trawlers_clean <- na.omit(pairs_french_trawlers)
+
+#---------------------------------------------------------------------------------------
+# To subset based on gear in Strategy:
+
+# Create a gear id
+pairs_french_trawlers_clean$gear <- substr(pairs_french_trawlers_clean$set, 1, 3)
+
+# Subset strategy from set string based on everything after the space
+pairs_french_trawlers_clean$strategy <- sub("^\\S+\\s+", '', pairs_french_trawlers_clean$set)
+
+# Set condition
+test.gear <- gsub(" ", "|", pairs_french_trawlers_clean$gear)
+# Apply condition
+i <- mapply(\(x, y)grepl(x, y), test.gear, pairs_french_trawlers_clean$strategy)
+# Create flag
+pairs_french_trawlers_clean <- pairs_french_trawlers_clean %>% 
+  mutate(flag = c("No", "Yes")[i + 1L]) %>%
+  filter(flag == "Yes")
+
+#---------------------------------------------------------------------------------------
+# For all others
+
+match.others <- catchWgtot_6.4_to_match %>% 
+  mutate(port = (substr(metier, 5, 7))) %>%
+  filter(port == "FRA" & strategy == "FrenchGillnetters" | port == "ESP" & strategy == "Spanish_Strategy")
+
+head(match.others)
+
+#---------------------------------------------------------------------------------------
+# Apply filters and save:
+
+catchWgtot_6.4_matched <- catchWgtot_6.4_to_match %>% 
+  filter(set %in% match.others$set | set %in% pairs_french_trawlers_clean$set)
+
+colnames(catchWgtot_6.4_matched)
+
+# Remove set
+catchWgtot_6.4_matched <- catchWgtot_6.4_matched[,-9]
+# View(catchWgtot_6.4_matched)
+
+fwrite(catchWgtot_6.4_matched, file = paste(dir, pathRData_6.4, 'CatchWgtot_6.4-0s_onlytrue_0s_chunk3.csv', sep = ''), sep = ";", compress = "none")
+
+```
+
+For Chunk 4 of Catch Weight
+
+```{r catch_Weight_zeros_chunk4, echo=TRUE}
+
+name_RData_6.4_catchweight <- 'catchWgtot_6.4-0s_only_chunk4'
+  
+catchWgtot_6.4 <- fread(paste(dir, pathRData_6.4, name_RData_6.4_catchweight,'.CSV', sep = ''))
+
+catchWgtot_6.4_to_match = tibble(catchWgtot_6.4)
+rm(catchWgtot_6.4)
+
+catchWgtot_6.4_to_match$set <- 
+  paste(catchWgtot_6.4_to_match$metier,
+        catchWgtot_6.4_to_match$strategy)
+
+# (number of pairs) pairs
+pairs <- data.frame(unique(catchWgtot_6.4_to_match$set))
+# View(pairs)
+
+# Assign column names
+names(pairs)[1] <- "set"
+
+#---------------------------------------------------------------------------------------
+# To subset based on port in Strategy:
+
+# Create  port id
+pairs$port <- substr(pairs$set, 5, 7)
+
+# Recall that Spanish fleets and Gill netters do not have a port
+other_ports <- c("FRA", "ESP")
+
+# Select all ports where French trawlers exist
+pairs_french_trawlers <- subset(pairs, !port %in% other_ports)
+
+# If the port id is not present in the strategy part of the set, assign an NA value
+pairs_french_trawlers$port[substr(pairs_french_trawlers$set, 15, 17)!= pairs_french_trawlers$port] <- NA
+
+#---------------------------------------------------------------------------------------
+# To subset based on vessel size in Strategy:
+
+# Create a vesselSize id
+pairs_french_trawlers$vesselSize <- substr(pairs_french_trawlers$set, 9, 13)
+
+# If the vesselSize id is not present in the strategy part of the set, assign an NA value
+pairs_french_trawlers$vesselSize[substr(pairs_french_trawlers$set, 19, 23)!= pairs_french_trawlers$vesselSize] <- NA
+
+# Remove all false zeros so far
+pairs_french_trawlers_clean <- na.omit(pairs_french_trawlers)
+
+#---------------------------------------------------------------------------------------
+# To subset based on gear in Strategy:
+
+# Create a gear id
+pairs_french_trawlers_clean$gear <- substr(pairs_french_trawlers_clean$set, 1, 3)
+
+# Subset strategy from set string based on everything after the space
+pairs_french_trawlers_clean$strategy <- sub("^\\S+\\s+", '', pairs_french_trawlers_clean$set)
+
+# Set condition
+test.gear <- gsub(" ", "|", pairs_french_trawlers_clean$gear)
+# Apply condition
+i <- mapply(\(x, y)grepl(x, y), test.gear, pairs_french_trawlers_clean$strategy)
+# Create flag
+pairs_french_trawlers_clean <- pairs_french_trawlers_clean %>% 
+  mutate(flag = c("No", "Yes")[i + 1L]) %>%
+  filter(flag == "Yes")
+
+#---------------------------------------------------------------------------------------
+# For all others
+
+match.others <- catchWgtot_6.4_to_match %>% 
+  mutate(port = (substr(metier, 5, 7))) %>%
+  filter(port == "FRA" & strategy == "FrenchGillnetters" | port == "ESP" & strategy == "Spanish_Strategy")
+
+head(match.others)
+
+#---------------------------------------------------------------------------------------
+# Apply filters and save:
+
+catchWgtot_6.4_matched <- catchWgtot_6.4_to_match %>% 
+  filter(set %in% match.others$set | set %in% pairs_french_trawlers_clean$set)
+
+colnames(catchWgtot_6.4_matched)
+
+# Remove set
+catchWgtot_6.4_matched <- catchWgtot_6.4_matched[,-9]
+# View(catchWgtot_6.4_matched)
+
+fwrite(catchWgtot_6.4_matched, file = paste(dir, pathRData_6.4, 'CatchWgtot_6.4-0s_onlytrue_0s_chunk4.csv', sep = ''), sep = ";", compress = "none")
+
+```
+
+Join Catch weight values
+
+```{r cleaned_catch_Weight_zeros, echo=TRUE}
+
+catchweight_chunk1 <- 'CatchWgtot_6.4-0s_onlytrue_0s_chunk1'
+catchweight_chunk2 <- 'CatchWgtot_6.4-0s_onlytrue_0s_chunk2'
+catchweight_chunk3 <- 'CatchWgtot_6.4-0s_onlytrue_0s_chunk3'
+catchweight_chunk4 <- 'CatchWgtot_6.4-0s_onlytrue_0s_chunk4'
+ 
+catchWgtot_chunk1 <- fread(paste(dir, pathRData_6.4, catchweight_chunk1,'.CSV', sep = ''))
+colnames(catchWgtot_chunk1)
+
+catchWgtot_chunk2 <- fread(paste(dir, pathRData_6.4, catchweight_chunk2,'.CSV', sep = ''))
+colnames(catchWgtot_chunk2)
+
+catchWgtot_chunk3 <- fread(paste(dir, pathRData_6.4, catchweight_chunk3,'.CSV', sep = ''))
+colnames(catchWgtot_chunk3)
+
+catchWgtot_chunk4 <- fread(paste(dir, pathRData_6.4, catchweight_chunk4,'.CSV', sep = ''))
+colnames(catchWgtot_chunk4)
+
+catchweight_6.4 <- rbind(catchWgtot_chunk1, catchWgtot_chunk2, catchWgtot_chunk3, catchWgtot_chunk4)
+
+fwrite(catchweight_6.4, file = paste(dir, pathRData_6.4, 'catchWgtot_6.4_true_0s.csv', sep = ''), sep = ";", compress = "none")
+
+```
+
+# For effort values
+
+```{r nominal_effort_zeros, echo=TRUE}
+
+name_RData_6.4_effort <- 'EffNomtot_6.4-0s_only'
+  
+EffNomtot_6.4 <- fread(paste(dir, pathRData_6.4, name_RData_6.4_effort,'.csv',sep=''))
+
+EffNomtot_6.4_to_match = tibble(EffNomtot_6.4)
+rm(EffNomtot_6.4)
+
+EffNomtot_6.4_to_match$set <- 
+  paste(EffNomtot_6.4_to_match$metier,
+        EffNomtot_6.4_to_match$strategy)
+
+# (number of pairs) pairs
+pairs <- data.frame(unique(EffNomtot_6.4_to_match$set))
+# View(pairs)
+
+# Assign column names
+names(pairs)[1] <- "set"
+
+#---------------------------------------------------------------------------------------
+# To subset based on port in Strategy:
+
+# Create  port id
+pairs$port <- substr(pairs$set, 5, 7)
+
+# Recall that Spanish fleets and Gill netters do not have a port
+other_ports <- c("FRA", "ESP")
+
+# Select all ports where French trawlers exist
+pairs_french_trawlers <- subset(pairs, !port %in% other_ports)
+
+# If the port id is not present in the strategy part of the set, assign an NA value
+pairs_french_trawlers$port[substr(pairs_french_trawlers$set, 15, 17)!= pairs_french_trawlers$port] <- NA
+
+#---------------------------------------------------------------------------------------
+# To subset based on vessel size in Strategy:
+
+# Create a vesselSize id
+pairs_french_trawlers$vesselSize <- substr(pairs_french_trawlers$set, 9, 13)
+
+# If the vesselSize id is not present in the strategy part of the set, assign an NA value
+pairs_french_trawlers$vesselSize[substr(pairs_french_trawlers$set, 19, 23)!= pairs_french_trawlers$vesselSize] <- NA
+
+# Remove all false zeros so far
+pairs_french_trawlers_clean <- na.omit(pairs_french_trawlers)
+
+#---------------------------------------------------------------------------------------
+# To subset based on gear in Strategy:
+
+# Create a gear id
+pairs_french_trawlers_clean$gear <- substr(pairs_french_trawlers_clean$set, 1, 3)
+
+# Subset strategy from set string based on everything after the space
+pairs_french_trawlers_clean$strategy <- sub("^\\S+\\s+", '', pairs_french_trawlers_clean$set)
+
+# Set condition
+test.gear <- gsub(" ", "|", pairs_french_trawlers_clean$gear)
+# Apply condition
+i <- mapply(\(x, y)grepl(x, y), test.gear, pairs_french_trawlers_clean$strategy)
+# Create flag
+pairs_french_trawlers_clean <- pairs_french_trawlers_clean %>% 
+  mutate(flag = c("No", "Yes")[i + 1L]) %>%
+  filter(flag == "Yes")
+
+#---------------------------------------------------------------------------------------
+# For all others
+
+match.others <- EffNomtot_6.4_to_match %>% 
+  mutate(port = (substr(metier, 5, 7))) %>%
+  filter(port == "FRA" & strategy == "FrenchGillnetters" | port == "ESP" & strategy == "Spanish_Strategy")
+
+head(match.others)
+
+#---------------------------------------------------------------------------------------
+# Apply filters and save:
+
+EffNomtot_6.4_matched <- EffNomtot_6.4_to_match %>% 
+  filter(set %in% match.others$set | set %in% pairs_french_trawlers_clean$set)
+
+colnames(EffNomtot_6.4_matched)
+
+# Remove step
+EffNomtot_6.4_matched <- EffNomtot_6.4_matched[,-6]
+
+fwrite(EffNomtot_6.4_matched, file = paste(dir, pathRData_6.4, 'EffNomtot_6.4_true_0s.csv', sep = ''), sep = ";", compress = "none")
+
+```
+

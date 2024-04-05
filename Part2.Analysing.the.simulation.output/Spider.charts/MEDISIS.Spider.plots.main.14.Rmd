@@ -1,0 +1,391 @@
+---
+title: "Spider.plots.main.14"
+author: "Stephanie Hopkins"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: TRUE
+---
+
+```{r setup, include=FALSE}
+
+rm(list = ls())
+gc()
+
+knitr::opts_chunk$set(echo=TRUE)
+knitr::opts_chunk$set(message=FALSE)
+list.of.packages <- c("data.table","tidyverse","fmsb","scales")
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+
+library(data.table)
+library(fmsb)
+library(tidyverse)
+library(scales)
+
+# To Replace with your file directory
+# dir <- "D:/steph/Documents"
+dir <- "C:/Users/shopkins/Desktop"
+
+MEDISIS <- "/MEDISIS/Part2.Analysing.the.simulation.output/"
+
+path <- paste(dir,MEDISIS,sep="")
+
+```
+
+# Load the catch data set
+
+For the first index: Juvenile catch avoidance (Note that the negative sign indicates a decrease in juvenile catch).
+
+```{r juvenile.catch.avoidance year.5, echo=TRUE}
+
+catch.maturity <- fread(paste(path,"/Data/", 
+                              "global.catch.weight.by.maturity.year.csv", sep=''), sep=";")
+
+head(catch.maturity)
+
+juvenile.catch.avoidance <- catch.maturity %>% 
+  filter(YEAR == 2024 & !SceName_short %in%
+           c("b","c","f","g","h","i","l","m","s","t","v","x","z","bb") 
+         & GROUP == "Juveniles") %>%
+  select(Scenarios, SceName, Scenario_type, SceName_short, Rel_Diff_wg) %>%
+  mutate(Rel_Diff_wg = round(Rel_Diff_wg))
+
+head(juvenile.catch.avoidance)
+
+# Rename to a unique vector label
+names(juvenile.catch.avoidance)[5] <- "Rel_Diff_juvenile.wg"
+
+range(juvenile.catch.avoidance$Rel_Diff_juvenile.wg)
+# -24  -6
+
+# View(juvenile.catch.avoidance)
+
+# Take absolute value since since this is an improvement indicator.
+juvenile.catch.avoidance <- juvenile.catch.avoidance %>% 
+  mutate(Rel_Diff_juvenile.wg = abs(Rel_Diff_juvenile.wg)) 
+
+range(juvenile.catch.avoidance$Rel_Diff_juvenile.wg)
+
+head(juvenile.catch.avoidance)
+
+```
+
+For the second index: biomass recovery
+
+```{r global.biomass year5, echo=TRUE}
+
+global.biomass <- fread(paste(path,"/Data/",
+                               "global.biomass.per.year.csv", sep=''), sep=";")
+
+head(global.biomass)
+
+biomass.recovery <- global.biomass %>% 
+  filter(YEAR == 2024 & !SceName_short %in% 
+           c("b","c","f","g","h","i","l","m","s","t","v","x","z","bb")) %>%
+  select(Scenarios, SceName, Scenario_type, SceName_short, Rel_Diff_biom) %>%
+  mutate(Rel_Diff_biom = round(Rel_Diff_biom))
+
+head(biomass.recovery)
+
+range(biomass.recovery$Rel_Diff_biom)
+# [1] 9  95
+
+```
+
+For the third index: catch maintenance 
+
+```{r global.catch.weight year5, echo=TRUE}
+
+global.catch.weight <- fread(paste(path,"/Data/",
+                                   "global.catch.weight.by.year.csv", sep=''), sep=";")
+
+head(global.catch.weight)
+
+catch.maitenence <- global.catch.weight %>% 
+  filter(YEAR == 2024 & !SceName_short %in%
+           c("b","c","f","g","h","i","l","m","s","t","v","x","z","bb")) %>% 
+  select(Scenarios, SceName, Scenario_type, SceName_short, Rel_Diff_wg) %>%
+  mutate(Rel_Diff_wg = round(Rel_Diff_wg))
+
+head(catch.maitenence)
+
+# Rename to unique vector label
+names(catch.maitenence)[5] <- "Rel_Diff_yr5.wg"
+
+range(catch.maitenence$Rel_Diff_yr5.wg)
+# [1] 11  43
+
+```
+
+For the fourth index: projected revenues (Note that this computation includes all species).
+
+```{r revenues.by.species year5, echo=TRUE}
+
+revenues.by.species <- fread(paste(path,"/Data/",
+                                   "revenues.by.species.2017.csv", sep=''), sep=";")
+
+head(revenues.by.species)
+
+projected.revenues.all <- revenues.by.species %>% 
+  filter(!SceName_short %in% c("b","c","f","g","h","i","l","m","s","t","v","x","z","bb")) %>% 
+  group_by(Scenarios, YEAR, simu, SceName, Scenario_type, SceName_short) %>%
+  summarise(Revenues = sum(Revenues)) %>%
+  ungroup() 
+
+View(projected.revenues.all)
+
+projected.revenues.all.2017 <- projected.revenues.all %>% filter(YEAR == 2017) %>%
+  select(Revenues) %>% 
+  distinct()
+
+projected.revenues.all.2017
+
+projected.revenues.all.part2 <- projected.revenues.all %>% 
+  group_by(Scenarios, YEAR, simu, SceName, Scenario_type, SceName_short) %>%
+  mutate(Diff_Rel_revenues = (Revenues - projected.revenues.all.2017$Revenues) /
+  projected.revenues.all.2017$Revenues * 100) %>%
+  ungroup() %>%
+  filter(YEAR == 2024) %>% 
+  select(Scenarios, SceName, Scenario_type, SceName_short, Diff_Rel_revenues) %>% 
+  mutate(Diff_Rel_revenues = round(Diff_Rel_revenues))
+
+# Rename to unique vector label
+names(projected.revenues.all.part2)[5] <- "Diff_Rel_proj.revenues"
+
+range(projected.revenues.all.part2$Diff_Rel_proj.revenues)
+# [1] -30 120
+
+# View(projected.revenues.all.part2)
+
+```
+
+For the fifth index: initial loss in catch
+
+```{r global.catch.weight year1, echo=TRUE}
+
+global.catch.weight <- fread(paste(path,"/Data/",
+                                   "global.catch.weight.by.year.csv", sep=''), sep=";")
+
+head(global.catch.weight)
+
+initial.loss.in.catch <- global.catch.weight %>% 
+  filter(YEAR == 2020 & !SceName_short %in%
+           c("b","c","f","g","h","i","l","m","s","t","v","x","z","bb")) %>%
+  select(Scenarios, SceName, Scenario_type, SceName_short, Rel_Diff_wg) %>%
+  mutate(Rel_Diff_wg = round(Rel_Diff_wg))
+
+head(initial.loss.in.catch)
+
+# Rename to unique vector label
+names(initial.loss.in.catch)[5] <- "Rel_Diff_init.loss.wg" 
+
+range(initial.loss.in.catch$Rel_Diff_init.loss.wg)
+# [1] -13  15
+
+```
+
+For the sixth index: initial loss in revenues (Note that this computation includes all species).
+
+```{r revenues.by.species year1, echo=TRUE}
+
+revenues.by.species <- fread(paste(path,"/Data/",
+                                   "revenues.by.species.2017.csv", sep=''), sep=";")
+
+head(revenues.by.species)
+
+projected.initial.revenues.all <- revenues.by.species %>% 
+  filter(!SceName_short %in% c("b","c","f","g","h","i","l","m","s","t","v","x","z","bb")) %>% 
+  group_by(Scenarios, YEAR, simu, SceName, SceName_short, Scenario_type) %>%
+  summarise(Revenues = sum(Revenues), .groups = "keep") %>%
+  ungroup() 
+
+# View(projected.initial.revenues.all)
+
+projected.initial.revenues.all.2017 <- projected.initial.revenues.all %>% 
+  filter(YEAR == 2017) %>%
+  select(Revenues) %>% 
+  distinct()
+
+projected.initial.revenues.all.2017
+
+projected.initial.revenues.all.part2 <- projected.initial.revenues.all %>% 
+  group_by(Scenarios, YEAR, simu, SceName, SceName_short, Scenario_type) %>%
+  mutate(Diff_Rel_revenues = (Revenues - projected.initial.revenues.all.2017$Revenues) /
+  projected.initial.revenues.all.2017$Revenues * 100) %>% 
+  ungroup() %>%
+  filter(YEAR == 2020) %>%
+  select(Scenarios, SceName, Scenario_type, SceName_short, Diff_Rel_revenues) %>%
+  mutate(Diff_Rel_revenues = round(Diff_Rel_revenues))
+
+# Rename to unique vector label
+names(projected.initial.revenues.all.part2)[5] <- "Diff_Rel_init.loss.revenues"
+
+range(projected.initial.revenues.all.part2$Diff_Rel_init.loss.revenues)
+# [1] -9 120
+
+```
+
+# Format the data for the spider charts
+
+Join data sets
+
+```{r joined.set, echo=TRUE}
+
+index_values <- inner_join(juvenile.catch.avoidance, biomass.recovery) 
+unique(index_values$SceName_short)
+colnames(index_values)
+
+index_values2 <- inner_join(index_values, catch.maitenence)
+unique(index_values2$SceName_short)
+colnames(index_values2)
+
+index_values3 <- inner_join(index_values2, projected.revenues.all.part2) 
+unique(index_values3$SceName_short)
+colnames(index_values3)
+
+index_values4 <- inner_join(index_values3, initial.loss.in.catch) 
+unique(index_values4$SceName_short)
+colnames(index_values4)
+
+index_values5 <- inner_join(index_values4, projected.initial.revenues.all.part2) %>% distinct() 
+
+unique(index_values5$SceName_short)
+
+colnames(index_values5)
+
+View(index_values5)
+
+```
+
+##  Creat custom function 
+
+code found at: https://www.datanovia.com/en/blog/beautiful-radar-chart-in-r-using-fmsb-and-ggplot-packages/#key-function-and-arguments
+
+```{r radarchart.fun, echo=TRUE}
+
+create_beautiful_radarchart <- function(data, color = "#00AFBB", 
+                                        vlabels = colnames(data), vlcex = 1,
+                                        caxislabels = NULL, title = NULL, ...){
+  radarchart(
+    data, axistype = 1,
+    # Customize the polygon
+    pcol = color, pfcol = scales::alpha(color, 0.5), plwd = 2, plty = 1,
+    # Customize the grid
+    cglcol = "darkgrey", cglty = 1, cglwd = 0.8,
+    # Customize the axis
+    axislabcol = "black", 
+    # Variable labels
+    vlcex = vlcex, vlabels = vlabels,
+    caxislabels = caxislabels, title = title, ...
+  )
+}
+
+```
+
+## Reorder the data
+
+```{r reorder.dat, echo=TRUE}
+
+# in order to use the library fmsb, the data must be a data frame
+index_values.df2 <- as.data.frame(index_values5)
+
+# in order to use the library fmsb, you must name the rows
+row.names(index_values.df2) <- index_values.df2$SceName
+
+unique(index_values.df2$SceName)
+
+# View(index_values.df2)
+
+sort(index_values.df2$SceName_short)
+
+plot.order <- c("a", "d", "e", "j", "k", "n", "o", "p", "q", "r", "u", "w", "y", "aa")
+
+index_values.df2 <- index_values.df2 %>% 
+  arrange(SceName_short) %>% 
+  mutate(plot.order = c(1,14,seq(2,13,1))) %>%
+  arrange(plot.order)
+
+# View(index_values.df2)
+
+index_values.df3 <- index_values.df2[,-c(1:4,11)]
+
+# View(index_values.df3)
+
+# Make names prettier
+names(index_values.df3) <- c("Juvenile catch avoidance", "Biomass recovery", "Catch maintenance", "Projected revenues", "Catch 1st year", "Revenues 1st year")
+
+```
+
+## Recale the data from 0 to 1
+
+```{r rescale, echo=TRUE}
+
+library(scales)
+
+index_values.df3_scaled <- round(apply(index_values.df3, 2, scales::rescale), 2)
+
+index_values.df3_scaled <- as.data.frame(index_values.df3_scaled)
+
+# View(index_values.df3_scaled)
+
+```
+
+## Create variables summary
+
+```{r summary.var, echo=TRUE}
+
+# Get the minimum and the max of every column  
+col_max <- apply(index_values.df3_scaled, 2, max)
+col_min <- apply(index_values.df3_scaled, 2, min)
+
+# Calculate the average profile 
+col_mean <- apply(index_values.df3_scaled, 2, mean)
+
+# Put together the summary of columns
+col_summary <- t(data.frame(Max = col_max, Min = col_min, Average = col_mean))
+
+# Bind variables summary to the data
+index_values.df3_scaled <- as.data.frame(rbind(col_summary, index_values.df3_scaled))
+
+head(index_values.df3_scaled)
+
+```
+
+## Shorten names
+
+```{r short.name, echo=TRUE}
+
+index_values.df3_scaled.short <- index_values.df3_scaled
+rownames(index_values.df3_scaled.short) <- 
+  c("Max",        "Min",        "Average",    "Status Quo", "Scenario d", 
+    "Scenario e", "Scenario j", "Scenario k", "Scenario n", "Scenario o", 
+    "Scenario p", "Scenario q", "Scenario r", "Scenario u", "Scenario w",  
+    "Scenario y", "Scenario aa")
+
+```
+
+## Plot scenrio outputs
+
+```{r Fig.4, echo=TRUE}
+
+opar <- par() 
+
+# Define settings for plotting in a 3x4 grid, with appropriate margins:
+par(mar = rep(0.8,4))
+par(mfrow = c(4,4))
+
+# Produce a radar-chart for each student
+for (i in 4:nrow(index_values.df3_scaled.short)) {
+  radarchart(
+    index_values.df3_scaled.short[c(1:3, i), ],
+    pfcol = c("#99999980",NA),
+    pcol= c(NA,2), plty = 1, plwd = 2,
+    title = row.names(index_values.df3_scaled.short)[i]
+  )
+}
+
+# Restore the standard par() settings
+par <- par(opar) 
+
+```

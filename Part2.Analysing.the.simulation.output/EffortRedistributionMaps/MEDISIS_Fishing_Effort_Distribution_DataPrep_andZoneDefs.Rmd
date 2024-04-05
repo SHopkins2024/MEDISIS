@@ -1,0 +1,1270 @@
+---
+title: "MEDISIS Fishing Effort Map"
+author: "Stephanie Hopkins"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+
+rm(list = ls())
+gc()
+
+knitr::opts_chunk$set(echo=TRUE, message=FALSE, results = "hide")
+
+list.of.packages <- c("data.table","tidyverse","reshape2","cowplot","stars","sf",
+                      "ggspatial","ggpattern","ggnewscale")
+
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+
+library(sf)
+library(data.table)
+library(stars)
+library(cowplot)
+library(reshape2)
+library(tidyverse)
+library(ggspatial) # For North Arrow and Scale Bar
+library(ggpattern) # For textured shape file
+library(ggnewscale) # For additional color fill palette 
+
+# To Replace with your file directory
+dir <- "C:/Users/steph/Documents"
+
+MEDISIS <- "/MEDISIS/Part2.Analysing.the.simulation.output/"
+
+path <- paste(dir,MEDISIS,sep="")
+
+# Full path to ISIS-Fish simulation outputs 
+simFolder <- paste(dir,"/isis-fish-4/isis-database/simulations/",sep="")
+
+# To Replace with your simulation name (note the folder name will be the simulation name specified in the ISIS-Fish terminal, the data in YYmmdd format, and the time in hh:mm format)
+simName <- "sim_MEDISIS_2024-02-15-09-55"
+
+StatusQuo.scen <- paste(simName, "/", simName, "_0/", sep="")
+
+```
+
+# Load the european coast line and grid
+
+This will serve as a base map for all other plots. You can actually use the rworldmap and rworldxtra libraries if you do not yet have a shape file.
+
+```{r region.shape}
+
+shapes_subfolder <- "Data/Shape.files/"
+
+GDL_extension <- "Extra/carto/shapefile/Europe_coastline_shapefile/"
+
+GDL <- read_sf(paste(path, shapes_subfolder, GDL_extension, "GDL.shp", sep = ""))
+plot(GDL)
+
+# NOTE: Grid extent should be 3, 6, 42.00, 43.55
+GDL_crop <- st_crop(GDL, xmin=2.95, xmax=6.05, ymin=41.95, ymax=43.6)
+plot(GDL_crop)
+
+grid <- read_sf(paste(path, shapes_subfolder, "Grid/grid.shp", sep = ""))
+plot(grid)
+
+p <- ggplot() + 
+  geom_sf(data=GDL_crop, color = alpha("grey", 1/2), size = 0.7, fill = 'darkgrey', alpha = .3) + 
+  geom_sf(data = grid, color = "grey")
+
+p
+
+rm(GDL)
+
+```
+
+# Load Spatial Closures
+
+```{r closure.shape.files}
+
+FRA <- read_sf(paste(path, shapes_subfolder, "FRA/FRAs_WGS84.shp", sep = ""))
+FRA <- FRA[1,]
+
+p + geom_sf(data = FRA, fill = 'yellowgreen', alpha = 0.3)
+
+#---------------------------------------------------------------------------
+
+NewFRA_regulation <- read_sf(paste(path, shapes_subfolder, "NewFRA_regulation/boxPaca_polygon_4326.shp", sep = ""))
+
+p + geom_sf(data = NewFRA_regulation, fill = 'yellowgreen', alpha = 0.3)
+
+#---------------------------------------------------------------------------
+
+zone_90_100_simplified <- read_sf(paste(path, shapes_subfolder, "zone_90_100_simplified/zone_90_100_simplifiee_Visvalingram_0_05_deg_accroche_dm_polygon_4326.shp", sep = ""))
+
+p + geom_sf(data = zone_90_100_simplified, fill = 'yellowgreen', alpha = 0.3)
+
+#---------------------------------------------------------------------------
+
+Offshore_closure_z1 <- read_sf(paste(path, shapes_subfolder, "Offshore_closures/zone1.shp", sep = ""))
+
+Offshore_closure_z2 <- read_sf(paste(path, shapes_subfolder, "Offshore_closures/zone2.shp", sep = ""))
+
+Offshore_closure_z3 <- read_sf(paste(path, shapes_subfolder, "Offshore_closures/zone3.shp", sep = ""))
+
+# Group the Offshore_closures into one file
+Offshore_permanent_spdf <- rbind(Offshore_closure_z1, Offshore_closure_z2, Offshore_closure_z3)
+
+p + geom_sf(data = Offshore_permanent_spdf, fill = 'yellowgreen', alpha = 0.3)
+
+#---------------------------------------------------------------------------
+
+Offshore_closure_seasonal <- read_sf(paste(path, shapes_subfolder, "Offshore_closures/Offshore_closure_seasonal_final.shp", sep = ""))
+
+p + geom_sf(data = Offshore_closure_seasonal, fill = 'yellowgreen', alpha = 0.3)
+
+```
+
+# Load Only Nominal Effort
+
+```{r effort}
+
+name_RData_6.4_effort <- 'EffNomtot_6.4_without-0s'
+EffNomtot_6.4 <- fread(paste(path, "Data/", name_RData_6.4_effort,'.csv',sep = ''))
+
+nameRDATA_clean <- 'EffNomtot_6.4_true_0s'
+EffNomtot_6.4_matched <- fread(paste(path, "Data/", nameRDATA_clean, '.csv', sep = ''))
+
+EffNomtot_6.4 <- rbind(EffNomtot_6.4, EffNomtot_6.4_matched)
+
+rm(EffNomtot_6.4_matched)
+
+```
+
+# Join the simulation design table to the simulation output
+
+Apply the names of the Scenarios in the column designating their numeric values and graft this to the Data.
+
+```{r simulation.bind}
+
+simuDesign <- '/MEDISIS/Part1.Reproducing.the.simulation.data/ISIS.Fish.Input.Tables/simulation_design_28'
+
+simulationDesign <- fread(paste(dir, simuDesign,".csv", sep=""), sep=';', h=F)
+
+colnames(simulationDesign) =  c('InitialAbundance','Recruitment','Connectivity','Scenarios')
+
+simulationDesign$simu <- seq(0, 503, 1)
+
+step <- unique(EffNomtot_6.4$step)
+nbYear <- length(step)/12 
+YEAR <- sort(rep(seq(2015,2014+nbYear,1), 12))
+MONTH <- rep(seq(1,12,1),nbYear)
+tabStep <- data.frame(step, YEAR, MONTH)
+
+EffNomtot_6.4 <- inner_join(EffNomtot_6.4, tabStep, by=c('step'))
+EffNomtot_6.4 <- inner_join(EffNomtot_6.4, simulationDesign, by=c('simu'))
+
+table_Sce_6.4 <- data.frame(Scenarios=as.character(c(0:27)),SceName=c("StatusQuo","Trawler_30_Red","Trawler_40_Red","Trawler_50_Red","Trawler_10_20_30","Trawler_10_17.5_25_32.5_40","Trawler_10_20_30_40_50","AllGears_30_Red","AllGears_40_Red","AllGears_50_Red","AllGears_10_20_30","AllGears_10_17.5_25_32.5_40","AllGears_10_20_30_40_50","Original_FRA_allYear","Northward_Expansion_of_FRA_Season","Northward_Expansion_of_FRA_allYear","90-100_Isobaths_Closure_Season","90-100_Isobaths_Closure_allYear","Offshore_Closures_Season","Offshore_Closures_allYear","Northward_Expansion_of_FRA_90-100m_Offshore_Closures_Combined","Northward_Expansion_of_FRA_90-100m_Offshore_allYear_Closures_Combined","Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures","Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures_allGears","Northward_Expansion_of_FRA_Offshore_Closures_Combined","Northward_Expansion_of_FRA_Offshore_allYear_Closures_Combined","Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures","Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures_allGears"))
+
+```
+
+# Filter data
+
+Note that while we parameterise OTB_XST_18-24 and OTM_CMT_18-24 in ISIS-Fish, these are not active metier or they do not target hake.
+
+```{r drop.inactive.metier}
+
+EffNomtot_6.4 <- subset(EffNomtot_6.4, !metier %in% c("OTB_XST_18-24","OTM_CMT_18-24"))
+
+dim(EffNomtot_6.4)
+# [1] 1935360  11
+
+```
+
+# Remove non-spatial scenarios except StatuQuo
+
+We are only interested in where they fish and how they overlap. Value per unit effort (VPUE) will be the same for all other species.
+
+```{r spatial.closure.scns}
+
+EffNomtot_6.4$Scenarios <- as.character(EffNomtot_6.4$Scenarios)
+
+effort_6.4_metier_final <- inner_join(EffNomtot_6.4, table_Sce_6.4, by="Scenarios")
+
+Drop1 <- c("Trawler_30_Red","Trawler_40_Red","Trawler_50_Red","Trawler_10_20_30","Trawler_10_17.5_25_32.5_40","Trawler_10_20_30_40_50","AllGears_30_Red","AllGears_40_Red","AllGears_50_Red","AllGears_10_20_30","AllGears_10_17.5_25_32.5_40","AllGears_10_20_30_40_50")
+
+effort_6.4_metier_final <- subset(effort_6.4_metier_final, !SceName %in% Drop1)
+
+# For Nominal Effort by métier:
+effort_month_metier <- setNames(aggregate(value ~ metier + YEAR + MONTH + simu + InitialAbundance + Recruitment + Connectivity + Scenarios + SceName, data = effort_6.4_metier_final, sum), c("METIER", "YEAR", "MONTH", "simu","InitialAbundance", "Recruitment", "Connectivity", "Scenarios", "SceName", "Nominal_Effort"))
+
+dim(effort_month_metier)
+# [1] 794880  10
+
+dim(unique(effort_month_metier))
+# [1] 794880  10
+
+rm(EffNomtot_6.4, effort_6.4_metier_final)
+
+```
+
+# For spatial zone defs, merge required simulation outputs
+
+Here we need the "ZonesDefinition.csv" and "MailleDefinition.csv" files. These can be found in the "isis-fish-4/isis-database/simulations/" subfolder. We also want to merge the nominal effort outputs with the ZoneCellsDefs file we are creating.
+
+Since we are only interested in the zone cell definitions so you can just use the first simulation output folder. All zones and cell definitions are constant throughout the model. 
+
+```{r cell.defs}
+
+cellDefs <- fread(paste(simFolder, StatusQuo.scen, 
+                        "resultExports/MailleDefinition.csv", sep=""),
+                  header = T, sep = ";")
+
+zoneDefs <- fread(paste(simFolder, StatusQuo.scen, 
+                        "resultExports/ZonesDefinition.csv", sep=""),
+                  header = T, sep = ";")
+
+ZoneCellDefs <- inner_join(cellDefs, zoneDefs, by = 'cell')
+
+Drop2 <- c("200m","90m_100m")
+
+ZoneCellDefs_mod <- subset(ZoneCellDefs, !zone %in% Drop2)
+
+# Having more to join on takes last memory
+ZoneCellDefs_mod <- inner_join(ZoneCellDefs_mod, tabStep, by = c('step'))
+
+ZoneCellDefs_mod <- subset(ZoneCellDefs_mod)
+
+dim(ZoneCellDefs_mod)
+# [1] 740280  7
+
+unique(dim(ZoneCellDefs_mod))
+
+unique(ZoneCellDefs_mod$zone)
+
+```
+
+# Restructure the ZoneCellDefs data.frame to match  
+
+Because metier zones are structured differently than the effort metier, we must manipulate the character strings a bit.
+
+1) Group the métiers.
+
+```{r met.restructure}
+
+Gillnetters <- c("FrenchGillnetters1")
+
+LLS_ESP <- "SpanishLongliners"
+
+OTB_ESP <- "SpanishOTB"
+
+All_others <- c("24-40_GPV_OTB", "24-40_GPV_OTT", "24-40_GPV_OTM",
+                "18-24_GPV_OTT", "18-24_GPV_OTB", "24-40_XST_OTB",
+                "24-40_XST_OTT", "24-40_CST_OTT", "24-40_XST_OTM",
+                "24-40_CST_OTB", "24-40_CST_OTM", "18-24_CST_OTB",
+                "24-40_CMT_OTM", "24-40_CMT_OTB", "24-40_GST_OTB",
+                "18-24_XST_OTT", "18-24_CMT_OTB", "18-24_GST_OTB",
+                "18-24_XMA_OTB", "18-24_XMA_OTM", "18-24_GST_OTM")
+
+metier_special <- c(Gillnetters, LLS_ESP, OTB_ESP)
+
+```
+
+2) Substitute métiers in metier_special.
+
+```{r special.met.subs}
+
+MetierZones_special <- ZoneCellDefs_mod %>%
+  filter(zone %in% metier_special)
+
+dim(MetierZones_special)
+# [1] 115320   8
+
+MetierZones_special$metier <- MetierZones_special$zone
+
+MetierZones_special$metier <-gsub("SpanishOTB", "OTB_ESP", MetierZones_special$metier)
+
+MetierZones_special$zone <-gsub("SpanishOTB", "OTB_ESP", MetierZones_special$zone)
+
+MetierZones_special$metier <-gsub("SpanishLongliners", "LLS_ESP", MetierZones_special$metier)
+
+MetierZones_special$zone <-gsub("SpanishLongliners", "LLS_ESP", MetierZones_special$zone)
+
+MetierZones_special$metier <-gsub("FrenchGillnetters1", "GNS_FRA", MetierZones_special$metier)
+
+MetierZones_special$zone <-gsub("FrenchGillnetters1", "GNS_FRA", MetierZones_special$zone)
+
+unique(MetierZones_special$metier)
+
+# Retain only the distinct values.
+MetierZones_special2 <- distinct(MetierZones_special)
+
+dim(MetierZones_special2)
+# [1] 115320   8
+
+```
+
+3) Substitute métiers in All_others.
+
+```{r me.subs}
+
+Rest_MetierZones <- ZoneCellDefs_mod %>%
+  filter(zone %in% All_others)
+
+dim(Rest_MetierZones)
+# [1] 461160  7
+
+Rest_MetierZones$VesselSize <- substr(Rest_MetierZones$zone, 1, 5)
+
+Rest_MetierZones$Port <- substr(Rest_MetierZones$zone, 7, 9)
+
+Rest_MetierZones$Gear <- substr(Rest_MetierZones$zone, 11, 13)
+
+Rest_MetierZones$metier <- paste0(Rest_MetierZones$Gear, "_", Rest_MetierZones$Port, "_", Rest_MetierZones$VesselSize, sep = '')
+
+unique(Rest_MetierZones$metier)
+
+Rest_MetierZones <- Rest_MetierZones[,-c(8:10)]
+
+# Check output
+Rest_MetierZones2 <- distinct(Rest_MetierZones)
+
+dim(Rest_MetierZones2)
+# [1] 461160  8
+
+```
+
+4) Merge everything together.
+
+```{r met.subs.merge}
+
+MetierZones <- rbind(Rest_MetierZones2, MetierZones_special2)
+
+dim(MetierZones)
+# [1] 576480  8
+
+names(MetierZones)[8] <- "METIER"
+
+unique(MetierZones$zone)
+
+MetierZones$zone <- MetierZones$METIER
+
+# Check output
+MetierZones2 <- distinct(MetierZones)
+
+dim(MetierZones2)
+# [1] 576480  8
+
+```
+
+# Extract the spatial closures and population zones
+
+Merge the remaining zones and create a unique id for sources of uncertainty by scenario.
+
+```{r extract.sptl}
+
+EffortMetierZones.unique <- inner_join(MetierZones2, effort_month_metier, 
+                                       by = c("YEAR", "MONTH", "METIER"))
+
+unique(EffortMetierZones.unique$zone)
+
+dim(EffortMetierZones.unique)
+# [1]
+
+rm(cellDefs, MetierZones, effort_month_metier, ZoneCellDefs, Rest_MetierZones, MetierZones_special, zoneDefs)
+
+Spatial_def_names <- c("ContinentalShelf", "ContinentalSlope", "Offshore_seasonal_expansion", "90_100m_isobath_closure", "Original_FRA", "Northward_Expansion_of_FRA", "Offshore_fixed")
+
+Spatial_defs <- subset(ZoneCellDefs_mod, zone %in% Spatial_def_names)
+
+```
+
+# Merge the spatial closure cells table with the effort table
+
+Remember that there will be metier zone cells that do not match with spatial closures, these should be conserved. However, after further investigation, there are 76 cells that occur in the metier zone definition files which are no defined in the population zone files. The effort for these metier zones should be unaffected because of the calibration steps, but any findings where spatial closures are applied will be effected, especially with the gillnetters. Unfortunately this is not something that can be corrected for in the model because no data otherwise exists to define these cells. 
+
+Therefore, while they are included in the zone definition maps, when calculating effort with a closure, these 76 cells should also be removed. An outline of their definition is provided, however for when more information becomes available so that they can be updated. 
+
+```{r merge.cells}
+
+EffortMetierZones.unique_ref <- EffortMetierZones.unique[(EffortMetierZones.unique$InitialAbundance == "0" & EffortMetierZones.unique$Recruitment == "0" & EffortMetierZones.unique$Connectivity == "0"), ]
+
+# Create a zone vector with the same values as METIER
+EffortMetierZones.unique_ref$zone <- EffortMetierZones.unique_ref$METIER
+
+# Find and incomplete values 
+EffortMetierZones.unique_check <- EffortMetierZones.unique_ref[!complete.cases(EffortMetierZones.unique_ref),]
+
+EffortMetierZones.unique_check
+
+# Important, use left_join to conserve all effort values (some cells have no corresponding zone)
+ZonesPLUS.unique.testleft <- left_join(EffortMetierZones.unique_ref, Spatial_defs, by = c("cell", "longitude", "latitude", "YEAR", "step", "MONTH"))
+
+dim(ZonesPLUS.unique.testleft)
+# [1] 12933120  16
+
+# Check if there are non-unique values or duplicates
+ZonesPLUS.unique.testleft.distinct <- distinct(ZonesPLUS.unique.testleft)
+
+```
+
+## Re-arrange data frame for easier zone definition plotting
+
+NA values were discovered and explored in a later code chunk.
+
+```{r restructure.zone.data}
+
+# Create a new vector for fish population zones
+Pop_Region <- c("ContinentalShelf", "ContinentalSlope")
+
+# Rearrange the like data so that rows bound by cell... this will be used for the zone definition plots only
+ZonesPLUS2.melt <- reshape2::melt(ZonesPLUS.unique.testleft.distinct[, c("cell", "longitude", "latitude","step", "zone.x", "YEAR","MONTH","METIER","simu", "InitialAbundance", "Recruitment", "Connectivity", "Scenarios", "SceName", "Nominal_Effort", "zone.y")], id = c("cell", "longitude", "latitude", "YEAR", "MONTH", "METIER", "simu", "InitialAbundance", "Recruitment", "Connectivity", "Scenarios", "SceName", "Nominal_Effort", "step"))
+
+# check for NA values
+unique(is.na(ZonesPLUS2.melt))
+
+# If Na's are present, check which rows
+ZonesPLUS2.melt1 <- ZonesPLUS2.melt[is.na(ZonesPLUS2.melt$value),]
+
+unique(ZonesPLUS2.melt1)
+
+unique(ZonesPLUS2.melt1$cell)
+
+# Remove all NA values from the data set
+ZonesPLUS2.melt1.1 <- ZonesPLUS2.melt[!is.na(ZonesPLUS2.melt$value),]
+
+dim(ZonesPLUS2.melt1.1)
+# [1] 25729920   16
+
+head(ZonesPLUS2.melt1.1)
+
+# Rename columns (This will be used for Zone Definitions)
+ZonesPLUS2.melt2 <- ZonesPLUS2.melt1.1[,-15]
+
+names(ZonesPLUS2.melt2)[15] <- "zone"
+
+# Isolate all melted cells that correspond to the actual closure zones
+ZonesPLUS.unique.testleft.distinct2 <- subset(ZonesPLUS2.melt2, !zone %in% Pop_Region)
+
+dim(ZonesPLUS.unique.testleft.distinct2)
+# [1] 16694400   15
+
+# Remove redundant values
+ZonesPLUS.unique.testleft.distinct2 <- distinct(ZonesPLUS.unique.testleft.distinct2)
+
+dim(distinct(ZonesPLUS.unique.testleft.distinct2))
+# [1] 12933120  15
+
+```
+
+# Restructure closures and métier zones to join on
+
+```{r restrucure.met.zones}
+
+# Create a list of the closure scenarios
+Closurezones <- c("90_100m_isobath_closure", "Original_FRA", "Northward_Expansion_of_FRA", "Offshore_seasonal_expansion", "Offshore_fixed")
+
+# These are the closure scenarios that we will later merge into the same table with metier zones
+ZonesPLUS.unique.testleft.distinct2.splt.cl <- subset(ZonesPLUS.unique.testleft.distinct2, zone %in% Closurezones)
+
+dim(ZonesPLUS.unique.testleft.distinct2.splt.cl)
+# [1] 3761280  15
+
+# These are you metier zones and that we will later merge into a table with closure scenarios
+ZonesPLUS.unique.testleft.distinct2.nonsplt.cl <- subset(ZonesPLUS.unique.testleft.distinct2, !zone %in% Closurezones)
+
+dim(ZonesPLUS.unique.testleft.distinct2.nonsplt.cl)
+# [1] 9171840  15
+
+dim(distinct(ZonesPLUS.unique.testleft.distinct2.nonsplt.cl))
+# [1] 9171840  15
+
+# Our final table now has two zones per each cell that we can apply condition to
+combined_fishing_effort_closure <- left_join(ZonesPLUS.unique.testleft.distinct2.nonsplt.cl, ZonesPLUS.unique.testleft.distinct2.splt.cl, by = c("cell", "longitude", "latitude", "YEAR","MONTH","METIER","simu", "InitialAbundance", "Recruitment", "Connectivity", "Scenarios", "SceName"))
+
+head(combined_fishing_effort_closure)
+
+dim(combined_fishing_effort_closure)
+# [1] 9667200  18
+
+# Note that you will have NA values in "zone.y"
+unique(combined_fishing_effort_closure$zone.y)
+# [1] NA                            "90_100m_isobath_closure"    
+# [3] "Offshore_seasonal_expansion" "Offshore_fixed"             
+# [5] "Original_FRA"                "Northward_Expansion_of_FRA" 
+
+# Replace these NA values with their corresponding MetierZone
+fill_w_MetierZone <- combined_fishing_effort_closure[is.na(combined_fishing_effort_closure$zone.y), ]
+
+fill_w_MetierZone$zone.y <- fill_w_MetierZone$zone.x
+
+combined_fishing_effort_w_closure <- subset(combined_fishing_effort_closure, !is.na(zone.y))
+
+combined_fishing_effort_closure.final <- rbind(fill_w_MetierZone, combined_fishing_effort_w_closure)
+
+summary(combined_fishing_effort_closure.final)
+
+# Remove Nominal_Effort.y and step.y
+combined_fishing_effort_closure.final <- combined_fishing_effort_closure.final[,-c(16,17)]
+
+names(combined_fishing_effort_closure.final)[16] <- "Zone"
+
+names(combined_fishing_effort_closure.final)[15] <- "MetierZone"
+
+names(combined_fishing_effort_closure.final)[14] <- "step"
+
+names(combined_fishing_effort_closure.final)[13] <- "Nominal_Effort"
+
+colnames(combined_fishing_effort_closure.final)
+
+fwrite(combined_fishing_effort_closure.final, file = paste(path, "Data/", "combined_fishing_effort_closure.final.csv", sep = ""))
+
+```
+
+## Create a fish population zone markers
+
+For continental shelf boundaries, we want to subset the data based on unique cell id. We do not care about the metier or effort values here, only that the cell corresponds to the continental plateau. 
+
+```{r continental.shelf.boundaries}
+
+ZonesPLUS.unique.testleft.continental <- subset(ZonesPLUS2.melt2, zone == "ContinentalShelf")
+
+ZonesPLUS.unique.testleft.continental2 <- ZonesPLUS.unique.testleft.continental %>%
+  distinct(cell, .keep_all = T)
+
+# Shift so that longitude corresponds to the center of the ISIS-Fish cell
+ZonesPLUS.unique.testleft.continental2$longitude <- ZonesPLUS.unique.testleft.continental2$longitude + 0.025
+
+# Shift so that latitude corresponds to the center of the ISIS-Fish cell
+ZonesPLUS.unique.testleft.continental2$latitude <- ZonesPLUS.unique.testleft.continental2$latitude + 0.025
+
+# Create a sf object
+continental_wgs84 <- st_as_sf(ZonesPLUS.unique.testleft.continental2,
+                              coords = c("longitude", "latitude"), 
+                              crs = st_crs(4326))
+
+# Create gridded polygon values
+continental_stars <- st_rasterize(continental_wgs84,
+                                  st_as_stars(st_bbox(grid), 
+                                              values = NA_real_, 
+                                              dx = 0.05, 
+                                              dy = 0.05))
+      
+continental_sf <- st_as_sf(continental_stars)
+
+ggplot()+
+  geom_sf(data=GDL_crop, fill="lightgreen")+
+  geom_sf(data=continental_sf, fill="lightblue")+
+  geom_sf(data=grid, col="lightgrey")+
+  theme_bw()
+
+# delete_layer is the same as overwrite
+st_write(continental_sf, paste(path, shapes_subfolder, "continental_sf.new.shp", sep=""), delete_layer = TRUE)
+
+```
+
+For the interface of the continental shelf break and submarine canyon heads (ContinentalSlope) area boundaries, we want to subset the data based on unique cell id. We do not care about the metier or effort values here, only that the cell corresponds to the canyon ridge area. 
+
+```{r continental.slope.boundaries}
+
+ZonesPLUS.unique.testleft.canyon <- subset(ZonesPLUS2.melt2, zone == "ContinentalSlope")
+
+ZonesPLUS.unique.testleft.canyon2 <- ZonesPLUS.unique.testleft.canyon %>% distinct(cell, .keep_all = T)
+
+# Shift so that longitude corresponds to the center of the ISIS-Fish cell
+ZonesPLUS.unique.testleft.canyon2$longitude <- ZonesPLUS.unique.testleft.canyon2$longitude + 0.025
+
+# Shift so that latitude corresponds to the center of the ISIS-Fish cell
+ZonesPLUS.unique.testleft.canyon2$latitude <- ZonesPLUS.unique.testleft.canyon2$latitude + 0.025
+
+# Create a sf object
+canyon_wgs84 <- st_as_sf(ZonesPLUS.unique.testleft.canyon2,
+                              coords = c("longitude", "latitude"), 
+                              crs = st_crs(4326))
+# Create gridded polygon values
+canyon_stars <- st_rasterize(canyon_wgs84,
+                                  st_as_stars(st_bbox(grid), 
+                                              values = NA_real_, 
+                                              dx = 0.05, 
+                                              dy = 0.05))
+
+canyon_sf <- st_as_sf(canyon_stars)
+
+ggplot()+
+  geom_sf(data=GDL_crop, fill="lightgreen")+
+  geom_sf(data=canyon_sf, fill="lightblue")+
+  geom_sf(data=grid, col="lightgrey")+
+  theme_bw()
+
+# delete_layer is the same as overwrite
+st_write(canyon_sf, paste(path, shapes_subfolder, "canyon_sf.new.shp", sep=""), delete_layer = TRUE)
+
+```
+
+# Create spatial points for port of calls
+
+Because we are not interested in squares use the actual gps coords. These were pulled from:
+
+For Grau du Roi, Sète, and Marseille:
+
+https://latitude.to/map/fr/france/cities/ 
+
+For all others:
+
+https://www.toutendroit.com/en/article-le-grau-d-agde-1884412/ 
+https://www.gps-latitude-longitude.com/gps-coordinates-of-port-la-nouvelle
+https://www.countrycoordinate.com/city-port-de-bouc-france/
+
+```{r main_ports}
+
+Abbreviation <- c("GST", "XST", "CST", "GPV", "CMT", "XMA")
+Name <- c("Grau-du-Roi", "Sete", "Le-Grau-d'Adge", "Port-la-Nouvelle", "Port-de-Bouc", "Marseille")
+cell <- c("La43.5Lo4.1", "La43.35Lo3.6", "La43.25Lo3.4", "La43.0Lo3.05", "La43.4Lo4.9", "La43.25Lo5.35")                  
+longitude <- c(4.13559, 3.69278, 3.447424, 3.043916, 4.985931, 5.38107)
+latitude <- c(43.53881, 43.4028, 	43.282701, 43.021342, 43.405449, 43.29695)
+
+Ports <- data.frame(Abbreviation, Name, cell, longitude, latitude)
+head(Ports)
+
+# convert Ports to an spatial points data.frame
+Ports.wgs84 <- st_as_sf(Ports,coords = c("longitude", "latitude"), crs = st_crs(4326))
+
+GPV.wgs84 <- subset(Ports.wgs84, Name == "Port-la-Nouvelle")
+CST.wgs84 <- subset(Ports.wgs84, Name == "Le-Grau-d'Adge")
+XST.wgs84 <- subset(Ports.wgs84, Name == "Sete")
+GST.wgs84 <- subset(Ports.wgs84, Name == "Grau-du-Roi")
+CMT.wgs84 <- subset(Ports.wgs84, Name == "Port-de-Bouc")
+XMA.wgs84 <- subset(Ports.wgs84, Name == "Marseille")
+
+```
+
+# Create a custom theme for the map legends
+
+```{r themes}
+
+text_theme <- theme(axis.title = element_blank(), axis.text.y = element_text(margin=margin(t=0,r=0,b=0,l=0), size = 15), axis.text.x.bottom = element_text(margin=margin(t=0,r=0,b=0,l=0), size = 15), strip.text = element_text(size=15), panel.spacing = unit(0.35, "cm"))
+
+```
+                
+# Check the plotting methods
+
+```{r Gulf_of_Lion_map}
+
+cols <- c("#003366" = str_wrap("Seasonal Offshore Extensions Applies to Gears: OTB, OTT, GNS, and LLS Seasonally (Oct-Dec) or allYear", 28),
+          "#b2182b" = str_wrap("Offshore Permanent Closures Applies to Gears: OTB, OTT, GNS, LLS allYear", 28),
+          "#FF33FF" = str_wrap("90-100 Isobaths Closures Applies to Gears: OTB and OTT Seasonally (Sept-Apr) or allYear", 28),
+          "#614B00" = str_wrap("Northward Expansion of FRA Applies to Gears: OTB and OTT Seasonally (Nov-Apr) or allYear", 28))
+
+cols2 <- ("#614B00" = str_wrap("Original Fishing Restricted Area [FRA] Boundaries Applies to Gears: OTB and OTT allYear", 28))
+  
+GoL.map <- ggplot() +
+  geom_sf(data = continental_sf, 
+          aes(fill = "#26abff"),
+          alpha = 0.3) +
+  geom_sf(data = canyon_sf,
+          aes(fill = "#c51b7d"),
+          alpha = 0.3) +
+  geom_sf(data = grid, 
+          color = "grey") +
+  geom_sf(data = zone_90_100_simplified,
+          aes(color = "#FF33FF"),
+          fill = "transparent", 
+          linewidth = 0.5) +
+  geom_sf_pattern(data = FRA, 
+                  aes(pattern_fill = "#614B00"), 
+                  pattern_fill2 = "transparent", 
+                  pattern_colour = "transparent", 
+                  color = "#614B00", 
+                  fill = "transparent", 
+                  pattern_aspect_ratio = 1.8, 
+                  linewidth = 0.5, 
+                  pattern_spacing = 0.01) +
+  geom_sf(data = NewFRA_regulation, 
+          aes(color = "#614B00"), 
+          fill = "transparent", 
+          linewidth = 0.5) +
+  geom_sf(data = Offshore_closure_seasonal,
+          aes(color = "#003366"),
+          fill = "transparent", 
+          linewidth = 0.25) +
+  geom_sf(data = Offshore_permanent_spdf, 
+                  aes(color = "#b2182b"), 
+                  fill = "transparent", 
+                  linewidth = 0.5) +
+  scale_fill_identity(name = "Population Zones",
+                      labels = c("#26abff" = str_wrap("Continental Shelf", 28), 
+                                 "#c51b7d" = str_wrap("Interface of The Continental Shelf Break and Submarine Canyon Heads", 28)), 
+                      guide = guide_legend("fill")) +
+  scale_color_identity(name = "Closure Measures", 
+                       labels = cols,
+                       guide = guide_legend("color")) +
+  scale_pattern_fill_identity(name = element_blank(), 
+                              labels = cols2,
+                              guide = guide_legend("pattern_fill"))+ 
+  guides(fill = guide_legend(override.aes = list(alpha=0.3)), 
+         color = guide_legend(order = 1), 
+         pattern_fill = guide_legend(order = 2)) +
+  geom_sf(data = GDL_crop, 
+          color = "#ae8f60", 
+          size = 0.7, 
+          fill = "#E1C699") +
+  geom_sf(data = GPV.wgs84, size = 1) +
+  geom_sf_text(data = GPV.wgs84, 
+               aes(label = Abbreviation),
+               size = 3.5, 
+               color = "black",
+               nudge_x = -0.02,
+               nudge_y = 0.04) +
+  geom_sf(data = CST.wgs84, size = 1) +
+  geom_sf_text(data = CST.wgs84, 
+               aes(label = paste0(Name, " (", Abbreviation, ")", sep = '')),
+               size = 3.5, 
+               color = "black", 
+               nudge_x = -0.18,
+               nudge_y = 0.04) +
+  geom_sf(data = XST.wgs84, size = 1) +
+  geom_sf_text(data = XST.wgs84, 
+               aes(label = paste0(Name, " (", Abbreviation, ")", sep = '')),
+               size = 3.5, 
+               color = "black", 
+               nudge_x = -0.10, 
+               nudge_y = 0.04) +
+  geom_sf(data = GST.wgs84, size = 1) +
+  geom_sf_text(data = GST.wgs84, 
+               aes(label = paste0(Name, " (", Abbreviation, ")", sep = '')),
+               size = 3.5, 
+               color = "black", 
+               nudge_x = -0.01,
+               nudge_y = 0.04) +
+  geom_sf(data = CMT.wgs84, size = 1) +
+  geom_sf_text(data = CMT.wgs84, 
+               aes(label = paste0(Name, " (", Abbreviation, ")", sep = '')),
+               size = 3.5, 
+               color = "black", 
+               nudge_x = 0.05,
+               nudge_y = 0.04) +
+  geom_sf(data = XMA.wgs84, size = 1) +
+  geom_sf_text(data = XMA.wgs84 , 
+               aes(label = paste0(Name, " (", Abbreviation, ")", sep = '')),
+               size = 3.5, 
+               color = "black", 
+               nudge_x = 0.20,
+               nudge_y = 0.04) +
+  annotation_scale(location = "br", 
+                   pad_x = unit(0.85, "cm"),
+                   pad_y = unit(0.5, "cm"),
+                   text_cex = 1,
+                   tick_height = 0.9)+ 
+  annotation_north_arrow(location = "tl", 
+                         which_north = "true", 
+                         height = unit(1, "cm"), 
+                         width = unit(1, "cm"), 
+                         pad_x = unit(1.25, "cm"), 
+                         pad_y = unit(0.75, "cm")) +
+  theme_bw() +
+  text_theme + 
+  theme(legend.title = element_blank(), legend.text = element_text(size = 12),
+        legend.margin = margin(t=-1,r=0, l=0, b=-1,'cm'), 
+        legend.spacing = unit(2, 'cm'),
+        legend.position="left", legend.box = "vertical", 
+        legend.key.height = unit(1.52, 'cm'), legend.key.width = unit(1.5, 'cm'))
+  
+GoL.map
+
+```
+
+# Assign cells population defintions
+
+We know that some cells do not have a corresponding spatial closure or fish population zone. This will not effect the model outcome as discussed above. But as information becomes available, these need to be updated so that they can be included in the effort cell computations.
+
+```{r cells.pop.defs}
+
+# Apply the fish population vector column based on existing cells
+ZonesPLUS.unique.testleft.region1 <- subset(ZonesPLUS.unique.testleft, zone.y == "ContinentalShelf")
+
+names(ZonesPLUS.unique.testleft.region1)[16] <- "Pop_Region"
+
+dim(ZonesPLUS.unique.testleft.region1)
+# [1] 8288640  16
+
+dim(distinct(ZonesPLUS.unique.testleft.region1))
+# [1] 8288640  16
+
+# Store the cells corresponding to the Continental Plateau cells in a vector
+Continental_cells <- as.vector(ZonesPLUS.unique.testleft.region1$cell)
+
+length(Continental_cells)
+# [1] 8288640
+
+write.csv(Continental_cells, file = paste(path, 'Data/Continental_cells.csv', sep = ""))
+
+# Apply the fish population vector column based on existing cells
+ZonesPLUS.unique.testleft.region2 <- subset(ZonesPLUS.unique.testleft, zone.y == "ContinentalSlope")
+
+names(ZonesPLUS.unique.testleft.region2)[16] <- "Pop_Region"
+
+dim(ZonesPLUS.unique.testleft.region2)
+# [1] 746880  16
+
+dim(distinct(ZonesPLUS.unique.testleft.region2))
+# [1] 746880  16
+
+# Store the cells corresponding to the Canyon Area cells in a vector
+Canyon_cells <- as.vector(ZonesPLUS.unique.testleft.region2$cell)
+
+length(Canyon_cells)
+# [1] 746880
+
+write.csv(Canyon_cells, file = paste(path, 'Data/Canyon_cells.csv', sep = ""))
+
+# Extract all other zones from the data frame
+ZonesPLUS.unique.testleft.region3 <- subset(ZonesPLUS.unique.testleft, !zone.y %in% Pop_Region)
+
+dim(ZonesPLUS.unique.testleft.region3)
+# [1] 3897600  16
+
+dim(distinct(ZonesPLUS.unique.testleft.region3))
+# [1] 3897600  16
+
+# Combine both Canyon and Continental Plateau data frames
+ZonesPLUS.unique.testleft.region4 <- rbind(ZonesPLUS.unique.testleft.region1, ZonesPLUS.unique.testleft.region2)
+
+dim(ZonesPLUS.unique.testleft.region4)
+# [1] 9035520  16
+
+# Combine the fish population data frame with the remaining values data frame
+ZonesPLUS1 <- left_join(ZonesPLUS.unique.testleft.region3, ZonesPLUS.unique.testleft.region4, by = c("cell", "longitude", "latitude", "YEAR", "MONTH", "METIER", "simu", "InitialAbundance", "Recruitment", "Connectivity", "Scenarios", "SceName", "Nominal_Effort", "step"))
+
+dim(ZonesPLUS1)
+#v[1] 3897600  18
+
+```
+
+# Create a table of cell zone definitions to update in the future model
+
+Create a table of cell definitions, with metier and zone id so that they can be more easily worked out for the next model version.
+
+```{r cells.to.update}
+
+# First, remove all NA values (these do not affect the data)
+ZonesPLUS1.1 <- na.omit(ZonesPLUS1)
+
+# Second, extract all values where NA's are present
+ZonesPLUS1.2 <- ZonesPLUS1[is.na(ZonesPLUS1$zone.y),]
+
+# Isolate all values where there are no fish population zones
+ZonesPLUS1.3 <- ZonesPLUS1.2[is.na(ZonesPLUS1.2$Pop_Region),]
+
+dim(ZonesPLUS1.3)
+# [1] 136320  18
+
+# Check that there are no values that were missed in the previous step when grouping cells by zone
+ZonesPLUS1.3.CANYON.TEST <- subset(ZonesPLUS1.3, cell %in% Canyon_cells)
+
+# 0 entries (method works)
+dim(ZonesPLUS1.3.CANYON.TEST)
+# [1]  0 18
+
+# Repeat the same procedure for the other population zone
+ZonesPLUS1.3.CONTINENTAL.TEST <- subset(ZonesPLUS1.3, cell %in% Continental_cells)
+
+# 0 entries (method works)
+dim(ZonesPLUS1.3.CONTINENTAL.TEST)
+# [1]  0 18
+
+# After verifying that these zone cell definitions truly are undefined, find all unique values 
+ZonesPLUS1.3.DISTINCT <- distinct(ZonesPLUS1.3)
+
+dim(ZonesPLUS1.3.DISTINCT)
+# [1] 136320  18
+
+unique(ZonesPLUS1.3.DISTINCT$cell)
+unique(ZonesPLUS1.3.DISTINCT$METIER)
+
+# Create a data table for the undefined values and export (already done)
+write.csv(ZonesPLUS1.3.DISTINCT, paste(path, "Data/Zones_without_popDefs.DISTINCT.csv",
+                                       sep = ""))
+
+# check separation (works)
+ZonesPLUS1.3.DISTINCT.test <- read.csv(paste(path, 
+                                             "Data/Zones_without_popDefs.DISTINCT.csv",
+                                             sep = ""))
+
+unique(ZonesPLUS1.3.DISTINCT$METIER)
+
+effort_check <- subset(ZonesPLUS1.3.DISTINCT, METIER == "OTB_GPV_24-40")
+
+dim(effort_check)
+# [1] 3840  18
+
+unique(effort_check$Scenarios)
+
+unique(effort_check$cell)
+
+effort_check2 <- subset(ZonesPLUS1.3.DISTINCT, METIER == "OTB_XST_24-40")
+
+dim(effort_check2)
+# [1] 1920  18
+
+unique(effort_check2$Scenarios)
+
+unique(effort_check2$cell)
+
+effort_check3 <- subset(ZonesPLUS1.3.DISTINCT, METIER == "OTB_GST_18-24")
+
+dim(effort_check3)
+# [1] 1920  18
+
+unique(effort_check3$Scenarios)
+
+unique(effort_check3$cell)
+
+effort_check4 <- subset(ZonesPLUS1.3.DISTINCT, METIER == "OTT_XST_24-40")
+
+dim(effort_check4)
+# [1] 1920  18
+
+unique(effort_check4$Scenarios)
+
+unique(effort_check4$cell)
+
+effort_check5 <-  subset(ZonesPLUS1.3.DISTINCT, METIER == "OTM_XST_24-40")
+
+dim(effort_check5)
+# [1] 1920   18
+
+unique(effort_check5$Scenarios)
+
+unique(effort_check5$cell)
+
+```
+
+# Appendix B, Figs. B1 -B23 & Appendix C., Figs. C1 - C.2
+
+Create zone definition maps. For métier, population and closure zones create maps.
+
+```{r zone.def.maps}
+
+# Type "T" if made, "F" is not
+zone_def_plots  = F
+
+if (zone_def_plots == FALSE){
+  
+for (z in unique(ZonesPLUS2.melt2$zone)){
+  zone_subset <- ZonesPLUS2.melt2[ZonesPLUS2.melt2$zone == z,]
+  print(z)
+  
+  zone_subset <- zone_subset %>% 
+    distinct(cell, .keep_all = T)
+  
+  zone_subset$longitude <- zone_subset$longitude + 0.025
+  zone_subset$latitude <- zone_subset$latitude + 0.025
+
+  # Create a sf object
+  zone_subset_wgs84 <- st_as_sf(zone_subset,
+                                coords = c("longitude", "latitude"), 
+                                crs = st_crs(4326))
+  
+  # Create gridded polygon values
+  zone_subset_stars <- st_rasterize(zone_subset_wgs84,
+                                    st_as_stars(st_bbox(grid), 
+                                                values = NA_real_, 
+                                                dx = 0.05, 
+                                                dy = 0.05))
+
+  zone_subset_sf <- st_as_sf(zone_subset_stars)
+   
+  p.z <- ggplot() +
+    geom_sf(data = zone_subset_sf, 
+            fill = alpha("#8cd3ff"), 
+            size = 0.3,
+            alpha=0.5) +
+    geom_sf(data = grid, 
+            color = "grey") +
+    geom_sf(data = zone_90_100_simplified,
+            aes(color = "#FF33FF"),
+            fill = "transparent", 
+            linewidth = 0.5) +
+    geom_sf_pattern(data = FRA, 
+                    aes(pattern_fill = "#614B00"), 
+                    pattern_fill2 = "transparent", 
+                    pattern_colour = "transparent", 
+                    color = "#614B00", 
+                    fill = "transparent", 
+                    pattern_aspect_ratio = 1.8, 
+                    linewidth = 0.5, 
+                    pattern_spacing = 0.01) +
+    geom_sf(data = NewFRA_regulation, 
+            aes(color = "#614B00"), 
+            fill = "transparent", 
+            linewidth = 0.5) +
+    geom_sf(data = Offshore_closure_seasonal,
+            aes(color = "#003366"),
+            fill = "transparent", 
+            linewidth = 0.25) +
+    geom_sf(data = Offshore_permanent_spdf, 
+            aes(color = "#b2182b"),
+            fill = "transparent", 
+            linewidth = 0.5) +
+    scale_color_identity(name = "Closure Measures", 
+                         labels = cols,
+                         guide = guide_legend("color")) +
+    scale_pattern_fill_identity(name = element_blank(), 
+                                labels = cols2,
+                                guide = guide_legend("pattern_fill")) + 
+    guides(color = guide_legend(order = 1), 
+           pattern_fill = guide_legend(order = 2)) +
+    geom_sf(data = GDL_crop, 
+            color = "#ae8f60", 
+            size = 0.7, 
+            fill = "#E1C699") +
+    geom_sf(data = GPV.wgs84, size = 1) +
+    geom_sf_text(data = GPV.wgs84, 
+                 aes(label = Abbreviation),
+                 size = 3.5, 
+                 color = "black",
+                 nudge_x = -0.02,
+                 nudge_y = 0.04) +
+    geom_sf(data = CST.wgs84, size = 1) +
+    geom_sf_text(data = CST.wgs84, 
+                 aes(label = paste0(Name, " (", Abbreviation, ")", sep = '')),
+                 size = 3.5, 
+                 color = "black", 
+                 nudge_x = -0.18,
+                 nudge_y = 0.04) +
+    geom_sf(data = XST.wgs84, size = 1) +
+    geom_sf_text(data = XST.wgs84, 
+                 aes(label = paste0(Name, " (", Abbreviation, ")", sep = '')),
+                 size = 3.5, 
+                 color = "black", 
+                 nudge_x = -0.10, 
+                 nudge_y = 0.04) +
+    geom_sf(data = GST.wgs84, size = 1) +
+    geom_sf_text(data = GST.wgs84, 
+                 aes(label = paste0(Name, " (", Abbreviation, ")", sep = '')),
+                 size = 3.5, 
+                 color = "black", 
+                 nudge_x = -0.01,
+                 nudge_y = 0.04) +
+    geom_sf(data = CMT.wgs84, size = 1) +
+    geom_sf_text(data = CMT.wgs84, 
+                 aes(label = paste0(Name, " (", Abbreviation, ")", sep = '')),
+                 size = 3.5, 
+                 color = "black", 
+                 nudge_x = 0.05,
+                 nudge_y = 0.04) +
+    geom_sf(data = XMA.wgs84, size = 1) +
+    geom_sf_text(data = XMA.wgs84, 
+                 aes(label = paste0(Name, " (", Abbreviation, ")", sep = '')),
+                 size = 3.5, 
+                 color = "black", 
+                 nudge_x = 0.20,
+                 nudge_y = 0.04) +
+    annotation_scale(location = "br", 
+                     pad_x = unit(0.85, "cm"),
+                     pad_y = unit(0.5, "cm"),
+                     text_cex = 1,
+                     tick_height = 0.9)+ 
+    annotation_north_arrow(location = "tl", 
+                           which_north = "true", 
+                           height = unit(1, "cm"), 
+                           width = unit(1, "cm"), 
+                           pad_x = unit(1.25, "cm"), 
+                           pad_y = unit(0.75, "cm")) +
+    theme_bw() +
+    theme(legend.title = element_blank(), legend.text = element_text(size = 12),
+          legend.margin = unit(0.00, 'cm'), legend.spacing = unit(2, 'cm'),
+          legend.position="left", legend.box = "vertical", 
+          legend.key.height = unit(1.52, 'cm'), legend.key.width = unit(1.5, 'cm')) +
+    text_theme
+  
+    file.name <- paste0(z, "_Zone_Definitions", sep = '')
+    
+    ggsave2(filename=paste(file.name,".pdf",sep=''),plot=p.z,device="pdf",
+            path=paste(path, "Figures/", sep=""), dpi=1200, width = 29, height=15,
+            unit="cm", limitsize = FALSE)
+    }
+    
+  }
+
+```
+
+# Adjust effort to cells
+
+You need to subtract out closure area from the metier used in each scenario separately !!! 
+
+## Setup conditional formatting
+
+In this step, we identify the number zone closure cells per scenario by the Metier / Month level and we also use the same conditions to simultaneously redefine effort for these cells to zero. This is only for visualisation purposes as the computations are done automatically in-fish  
+
+Only the fifth year is included for now, but in order to investigate all years you would need to adapt the code and repeat this analysis on a super computer.
+
+```{r apply.closure.to.met.zones}
+
+combined_fishing_effort_closure2 <- subset(combined_fishing_effort_closure.final, 
+                                           YEAR == 2024)
+colnames(combined_fishing_effort_closure2)
+
+EffortMetierZonesPLUS.correct <- data.table()
+
+# Type "T" if made, "F" is not
+EffortMetierZonesPLUS.correct.made = T 
+
+if (EffortMetierZonesPLUS.correct.made == FALSE){
+
+for (m in unique(combined_fishing_effort_closure2$METIER)){
+  metier_subset <- 
+    combined_fishing_effort_closure2[combined_fishing_effort_closure2$METIER == m, ]
+  print(m)
+
+  for (s in unique(metier_subset$Scenarios)){
+    metier_scen_subset <- metier_subset[metier_subset$Scenarios == s,]
+    print(s)
+    
+      for (i in unique(metier_subset$MONTH)){
+        metier_scen_subset_mois <- metier_scen_subset[metier_scen_subset$MONTH == i,]
+        print(i)
+      
+        NbMetierZone_cells <- as.numeric(n_distinct(metier_scen_subset_mois$cell))
+        print(NbMetierZone_cells)
+        metier_scen_subset_mois$NbMetierZone_cells <- NbMetierZone_cells
+      
+          for (z in unique(metier_scen_subset_mois$Zone)){
+            metier_scen_subset_zone <-
+              metier_scen_subset_mois[metier_scen_subset_mois$Zone == z,]
+            print(z)
+      
+            metier_scen_subset_zone <- data.table(metier_scen_subset_zone)
+        
+            # For each zone, find the number of unique cells   
+            NbZone_cells <- as.numeric(n_distinct(metier_scen_subset_zone$cell))
+            print(NbZone_cells)
+            metier_scen_subset_zone$NbZone_cells <- NbZone_cells
+        
+            IntsectingCell <- rep_len(0, length.out =
+                                        length(metier_scen_subset_zone$NbZone_cells))
+            Nominal_Effort <- rep_len(NA, length.out =
+                                        length(metier_scen_subset_zone$NbZone_cells))
+        
+            if (s %in% c(15,22:24,25:29) && z == "Original_FRA" &&
+                !m %in% c("GNS_FRA","LLS_ESP")){
+              IntsectingCell[IntsectingCell == 0] <- 1
+              Nominal_Effort[is.na(Nominal_Effort)] <- 0
+            }
+        
+            if ((s == 17 && z == "Northward_Expansion_of_FRA" && !m %in% 
+                 c("GNS_FRA","LLS_ESP")) || (s %in% c(16,22:24,25:29) &&
+                                             z == "Northward_Expansion_of_FRA" &&
+                                             !m %in% c("GNS_FRA", "LLS_ESP") &&
+                                             i %in% c(11:12,1:4))){
+              IntsectingCell[IntsectingCell == 0] <- 1
+              Nominal_Effort[is.na(Nominal_Effort)] <- 0
+            }
+
+            if ((s == 19 && z == "90_100m_isobath_closure" && !m %in%
+                 c("GNS_FRA","LLS_ESP")) || (s %in% c(18,22:25) &&
+                                             z == "90_100m_isobath_closure" &&
+                                             i %in% c(9:12,1:4) &&
+                                             !m %in% c("GNS_FRA","LLS_ESP"))){
+              IntsectingCell[IntsectingCell == 0] <- 1
+              Nominal_Effort[is.na(Nominal_Effort)] <- 0
+            }
+            
+            if ((s == 21 && z %in% c("Offshore_fixed","Offshore_seasonal_expansion") &&
+                 !m %in% c("OTM_GPV_24-40","OTM_XST_24-40","OTM_CST_24-40",
+                           "OTM_CMT_24-40","OTM_GST_18-24")) || 
+                (s %in% c(20,22:24,25:29) && z == "Offshore_fixed" && !m %in%
+                 c("OTM_GPV_24-40","OTM_XST_24-40","OTM_CST_24-40","OTM_CMT_24-40",
+                   "OTM_GST_18-24")) ||
+                (s %in% c(20,22:24,25:29) && z == "Offshore_seasonal_expansion" &&
+                 !m %in% c("OTM_GPV_24-40","OTM_XST_24-40","OTM_CST_24-40",
+                                           "OTM_CMT_24-40","OTM_GST_18-24") &&
+                 i %in% c(11:12))){
+              IntsectingCell[IntsectingCell == 0] <- 1
+              Nominal_Effort[is.na(Nominal_Effort)] <- 0
+            }
+        
+            else{
+              IntsectingCell[IntsectingCell == 0] <-  0
+              Nominal_Effort[is.na(Nominal_Effort)] <-
+                metier_scen_subset_zone$Nominal_Effort
+            }
+            
+            print(IntsectingCell)
+            metier_scen_subset_zone$IntsectingCell <- IntsectingCell
+            metier_scen_subset_zone$Nominal_Effort <- Nominal_Effort
+        
+            EffortMetierZonesPLUS.correct <- rbind(EffortMetierZonesPLUS.correct,
+                                                   metier_scen_subset_zone)
+        }
+    }
+  }
+}
+
+    fwrite(EffortMetierZonesPLUS.correct, 
+           file = paste(path, 'Data/EffortMetierZonesPLUS.correct.csv', sep = ''),
+           sep = ",", compress = "none")
+    # View(EffortMetierZonesPLUS.correct)
+}
+
+```
+
+## Calculate the new effort values based on the previous step
+
+```{r redistribute.effort.by.cell}
+
+EffortMetierZonesPLUS.correct <- fread(file = paste(path, 'Data/EffortMetierZonesPLUS.correct.csv', sep = ''), sep = ",")
+
+dim(EffortMetierZonesPLUS.correct)
+# [1] 966720  19
+
+EffortMetierZonesPLUS.correct_distinct <- distinct(EffortMetierZonesPLUS.correct)
+
+dim(EffortMetierZonesPLUS.correct_distinct)
+# [1] 966720  19
+
+EffortMetierZonesPLUS.correct2 <- data.table()
+
+# Type "T" if made, "F" is not
+EffortMetierZonesPLUS.correct.made = T
+
+if (EffortMetierZonesPLUS.correct.made == FALSE){
+
+for (m in unique(EffortMetierZonesPLUS.correct$METIER)){
+  metier_subset <- 
+    EffortMetierZonesPLUS.correct[EffortMetierZonesPLUS.correct$METIER == m, ]
+  print(m)
+
+  for (s in unique(metier_subset$Scenarios)){
+    metier_scen_subset <- metier_subset[metier_subset$Scenarios == s,]
+    print(s)
+    
+    for (i in unique(metier_scen_subset$MONTH)){
+      metier_scen_subset_mois <- metier_scen_subset[metier_scen_subset$MONTH == i,]
+      print(i)
+      
+      metier_scen_subset_mois <- data.table(metier_scen_subset_mois)
+      
+      final_cell_count <- sum(metier_scen_subset_mois$IntsectingCell)
+      metier_scen_subset_mois$final_cell_count <- final_cell_count
+      
+      difference_in_cells <- metier_scen_subset_mois$NbMetierZone_cells -
+        final_cell_count
+      metier_scen_subset_mois$difference_in_cells <- difference_in_cells
+      
+      #metier_scen_subset_mois <- unique(metier_scen_subset_mois)
+      
+      metier_scen_subset_mois$NewEffort = metier_scen_subset_mois$Nominal_Effort /
+        difference_in_cells
+      metier_scen_subset_mois$NewEffort[is.na(metier_scen_subset_mois$NewEffort)] = 0
+      metier_scen_subset_mois$NewEffort[!is.finite(metier_scen_subset_mois$NewEffort)] = 0
+      
+      EffortMetierZonesPLUS.correct2 <- rbind(EffortMetierZonesPLUS.correct2,
+                                              metier_scen_subset_mois, fill = TRUE)
+    }
+  }
+}
+  
+  fwrite(EffortMetierZonesPLUS.correct2, 
+         file = paste(path, 'Data/EffortMetierZonesPLUS.correct2.csv', sep = ''),
+         sep = ",", compress = "none")
+  # View(EffortMetierZonesPLUS.correct2)
+}
+
+```

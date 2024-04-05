@@ -1,0 +1,340 @@
+---
+title: "Spider.plots.main.14"
+author: "Stephanie Hopkins"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: TRUE
+---
+
+```{r setup, include=FALSE}
+
+rm(list = ls())
+gc()
+
+knitr::opts_chunk$set(echo=TRUE)
+knitr::opts_chunk$set(message=FALSE)
+
+
+list.of.packages <- c("data.table","tidyverse","fmsb","scales")
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+
+library(data.table)
+library(fmsb)
+library(tidyverse)
+library(scales)
+
+# To Replace with your file directory
+# dir <- "D:/steph/Documents"
+dir <- "C:/Users/shopkins/Desktop"
+
+MEDISIS <- "/MEDISIS/Part2.Analysing.the.simulation.output/"
+
+path <- paste(dir,MEDISIS,sep="")
+
+```
+
+# Load the datasets
+
+Prep the data for year 5 catch by fleet
+
+```{r}
+
+fleet.catch <- fread(paste(path,"Data/",
+                           "fleet.catch.weight.by.year.csv", sep=''), sep=";")
+
+head(fleet.catch)
+
+fleet.catch.prestep <- fleet.catch %>% 
+  filter(YEAR == 2024 & !SceName_short %in%
+           c("b","c","f","g","h","i","l","m","s","t","v","x","z","bb")) %>%
+  select(Scenarios, SceName, Scenario_type, SceName_short, Rel_Diff_wg, fleet) %>%
+  mutate(Rel_Diff_wg = round(Rel_Diff_wg)) %>% 
+  distinct()
+
+head(fleet.catch.prestep)
+
+```
+
+## Subset the data
+
+For first index: French trawlers
+
+```{r French.trawl.catch, echo=TUE}
+
+French.trawlers.yr5 <- fleet.catch.prestep %>%
+  filter(fleet == "French Trawlers")
+
+# Create a unique index names
+names(French.trawlers.yr5)[5] <- "French.trawl.catch"
+
+# remove fleet column
+French.trawlers.yr5 <- French.trawlers.yr5[,-6]
+
+```
+
+For second index: French gillnetters
+
+```{r French.gillnetter.catch, echo=TRUE}
+
+French.gillnetters.yr5 <- fleet.catch.prestep %>%
+  filter(fleet == "French Gillnetters")
+
+# Create a unique index names
+names(French.gillnetters.yr5)[5] <- "French.gillnetter.catch"
+
+# remove fleet column
+French.gillnetters.yr5 <- French.gillnetters.yr5[,-6]
+
+```
+
+For third index: Spanish trawlers
+
+```{r Spanish.trawler.catch, echo=TRUE}
+
+Spanish.trawlers.yr5 <- fleet.catch.prestep %>%
+  filter(fleet == "Spanish Trawlers")
+
+# Create a unique index names
+names(Spanish.trawlers.yr5)[5] <- "Spanish.trawler.catch"
+
+# remove fleet column
+Spanish.trawlers.yr5 <- Spanish.trawlers.yr5[,-6]
+
+```
+
+For fourth index: Spanish longliners
+
+```{r Spanish.longliners.catch, echo=TRUE}
+
+Spanish.longliners.yr5 <- fleet.catch.prestep %>%
+  filter(fleet == "Spanish longliners")
+
+# Create a unique index names
+names(Spanish.longliners.yr5)[5] <- "Spanish.longliners.catch"
+
+# remove fleet column
+Spanish.longliners.yr5 <- Spanish.longliners.yr5[,-6]
+
+```
+
+# Load the biomass data set
+
+Prep the data for year 5 biomass by zone
+
+```{r biomass.data.prep year5, echo=TRUE}
+
+zone.biomass <- fread(paste(path,"/Data/",
+                            "biomass.zone.by.year.csv", sep=''), sep=";")
+
+head(zone.biomass)
+
+biomass.recovery <- zone.biomass %>% 
+  filter(YEAR == 2024 & !SceName_short %in% 
+           c("b","c","f","g","h","i","l","m","s","t","v","x","z","bb")) %>%
+  select(Scenarios, SceName, Scenario_type, SceName_short, Rel_Diff_biom, ZONE) %>%
+  mutate(Rel_Diff_biom = round(Rel_Diff_biom))
+
+head(biomass.recovery)
+
+```
+
+## Subset the data
+
+For fifth index: biomass recovery continental shelf
+
+```{r shelf.biomass, echo=TRUE}
+
+shelf.biomass.yr5 <- biomass.recovery %>%
+  filter(ZONE == "Zone 1")
+
+head(shelf.biomass.yr5)
+
+# Create a unique index names
+names(shelf.biomass.yr5)[5] <- "shelf.biomass"
+
+# Remove zone column
+shelf.biomass.yr5 <- shelf.biomass.yr5[,-6]
+
+```
+
+For sixth index: biomass recovery continental slope interface
+
+```{r slope.interface.biomass, echo=TRUE}
+
+interface.biomass.yr5 <- biomass.recovery %>%
+  filter(ZONE == "Zone 2")
+
+head(interface.biomass.yr5)
+
+# Create a unique index names
+names(interface.biomass.yr5)[5] <- "slope.interface.biomass"
+
+# Remove zone column
+interface.biomass.yr5 <- interface.biomass.yr5[,-6]
+
+```
+
+# Format the data for the spider charts
+
+Join data sets
+
+```{r joined.set, echo=TRUE}
+
+index_values <- inner_join(French.trawlers.yr5, French.gillnetters.yr5) 
+unique(index_values$SceName_short)
+colnames(index_values)
+
+index_values2 <- inner_join(index_values, Spanish.trawlers.yr5)
+unique(index_values2$SceName_short)
+colnames(index_values2)
+
+index_values3 <- inner_join(index_values2, Spanish.longliners.yr5) 
+unique(index_values3$SceName_short)
+colnames(index_values3)
+
+index_values4 <- inner_join(index_values3, shelf.biomass.yr5) 
+unique(index_values4$SceName_short)
+colnames(index_values4)
+
+index_values5 <- inner_join(index_values4, interface.biomass.yr5) %>%
+  distinct() 
+
+unique(index_values5$SceName_short)
+
+colnames(index_values5)
+
+# View(index_values5)
+
+```
+
+##  Creat custom function 
+
+code found at: https://www.datanovia.com/en/blog/beautiful-radar-chart-in-r-using-fmsb-and-ggplot-packages/#key-function-and-arguments
+
+```{r radarchart.fun, echo=TRUE}
+
+create_beautiful_radarchart <- function(data, color = "#00AFBB", 
+                                        vlabels = colnames(data), vlcex = 1,
+                                        caxislabels = NULL, title = NULL, ...){
+  radarchart(
+    data, axistype = 1,
+    # Customize the polygon
+    pcol = color, pfcol = scales::alpha(color, 0.5), plwd = 2, plty = 1,
+    # Customize the grid
+    cglcol = "darkgrey", cglty = 1, cglwd = 0.8,
+    # Customize the axis
+    axislabcol = "black", 
+    # Variable labels
+    vlcex = vlcex, vlabels = vlabels,
+    caxislabels = caxislabels, title = title, ...
+  )
+}
+
+```
+
+## Reorder the data
+
+```{r reorder.dat, echo=TRUE}
+
+# in order to use the library fmsb, the data must be a data frame
+index_values.df2 <- as.data.frame(index_values5)
+
+# in order to use the library fmsb, you must name the rows
+row.names(index_values.df2) <- index_values.df2$SceName
+
+unique(index_values.df2$SceName)
+
+# View(index_values.df2)
+
+sort(index_values.df2$SceName_short)
+
+plot.order <- c("a", "d", "e", "j", "k", "n", "o", "p", "q", "r", "u", "w", "y", "aa")
+
+index_values.df2 <- index_values.df2 %>% 
+  arrange(SceName_short) %>% 
+  mutate(plot.order = c(1,14,seq(2,13,1))) %>%
+  arrange(plot.order)
+
+# View(index_values.df2)
+
+index_values.df3 <- index_values.df2[,-c(1:4,11)]
+
+# View(index_values.df3)
+
+# Make names prettier
+names(index_values.df3) <- c("French trawl catch", "French gillnetter catch", "Spanish trawler catch", "Spanish.longliners.catch", "shelf biomass", "slope interface biomass")
+
+```
+
+## Recale the data from 0 to 1
+
+```{r rescale, echo=TRUE}}
+
+index_values.df3_scaled <- round(apply(index_values.df3, 2, scales::rescale), 2)
+
+index_values.df3_scaled <- as.data.frame(index_values.df3_scaled)
+
+# View(index_values.df3_scaled)
+
+```
+
+## Create variables summary
+
+```{r summary.var, echo=TRUE}
+
+# Get the minimum and the max of every column  
+col_max <- apply(index_values.df3_scaled, 2, max)
+col_min <- apply(index_values.df3_scaled, 2, min)
+
+# Calculate the average profile 
+col_mean <- apply(index_values.df3_scaled, 2, mean)
+
+# Put together the summary of columns
+col_summary <- t(data.frame(Max = col_max, Min = col_min, Average = col_mean))
+
+# Bind variables summary to the data
+index_values.df3_scaled <- as.data.frame(rbind(col_summary, index_values.df3_scaled))
+
+head(index_values.df3_scaled)
+
+```
+
+## Shorten names
+
+```{r short.name, echo=TRUE}
+
+index_values.df3_scaled.short <- index_values.df3_scaled
+rownames(index_values.df3_scaled.short) <- 
+  c("Max",        "Min",        "Average",    "Status Quo", "Scenario d", 
+    "Scenario e", "Scenario j", "Scenario k", "Scenario n", "Scenario o", 
+    "Scenario p", "Scenario q", "Scenario r", "Scenario u", "Scenario w",  
+    "Scenario y", "Scenario aa")
+
+```
+
+## Plot scenrio outputs
+
+```{r Fig.6, echo=TRUE}
+
+opar <- par() 
+
+# Define settings for plotting in a 3x4 grid, with appropriate margins:
+par(mar = rep(0.8,4))
+par(mfrow = c(4,4))
+
+# Produce a radar-chart for each student
+for (i in 4:nrow(index_values.df3_scaled.short)) {
+  radarchart(
+    index_values.df3_scaled.short[c(1:3, i), ],
+    pfcol = c("#99999980",NA),
+    pcol= c(NA,2), plty = 1, plwd = 2,
+    title = row.names(index_values.df3_scaled.short)[i]
+  )
+}
+
+# Restore the standard par() settings
+par <- par(opar) 
+
+```

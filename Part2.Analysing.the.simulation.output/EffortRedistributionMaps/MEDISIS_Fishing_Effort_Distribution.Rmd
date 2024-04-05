@@ -1,0 +1,549 @@
+---
+title: "MEDISIS Fishing Effort Map"
+author: "Stephanie Hopkins"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+
+rm(list = ls())
+gc()
+
+knitr::opts_chunk$set(echo=TRUE, warning=FALSE, message=FALSE, results = "hide")
+
+list.of.packages <- c("data.table","tidyverse","reshape2","cowplot","stars","sf",
+                      "ggspatial","ggpattern","ggnewscale", "gtable", "classInt",
+                      "ggplotify","gridExtra")
+
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+
+library(sf)
+library(data.table)
+library(stars)
+library(cowplot)
+library(reshape2)
+library(tidyverse)
+library(ggspatial) # For North Arrow and Scale Bar
+library(ggpattern) # For textured shape file
+library(ggnewscale) # For additional color fill palette 
+library(gtable)
+library(classInt)
+library(gridExtra)
+library(ggplotify)
+
+# To Replace with your file directory
+dir <- "C:/Users/steph/Documents"
+
+MEDISIS <- "/MEDISIS/Part2.Analysing.the.simulation.output/"
+
+path <- paste(dir,MEDISIS,sep="")
+
+```
+
+# Load the european coast line and grid
+
+This will serve as a base map for all other plots. You can actually use the rworldmap and rworldxtra libraries if you do not yet have a shape file.
+
+```{r region.shape}
+
+shapes_subfolder <- "Data/Shape.files/"
+
+GDL_extension <- "Extra/carto/shapefile/Europe_coastline_shapefile/"
+
+GDL <- read_sf(paste(path, shapes_subfolder, GDL_extension, "GDL.shp", sep = ""))
+plot(GDL)
+
+# NOTE: Grid extent should be 3, 6, 42.00, 43.55
+GDL_crop <- st_crop(GDL, xmin=2.95, xmax=6.05, ymin=41.95, ymax=43.6)
+plot(GDL_crop)
+
+grid <- read_sf(paste(path, shapes_subfolder, "Grid/grid.shp", sep = ""))
+plot(grid)
+
+p <- ggplot() + 
+  geom_sf(data=GDL_crop, color = alpha("grey", 1/2), size = 0.7, fill = 'darkgrey', alpha = .3) + 
+  geom_sf(data = grid, color = "grey")
+
+p
+
+rm(GDL)
+
+```
+
+# Load Spatial Closures
+
+```{r closure.shape.files}
+
+FRA <- read_sf(paste(path, shapes_subfolder, "FRA/FRAs_WGS84.shp", sep = ""))
+FRA <- FRA[1,]
+
+p + geom_sf(data = FRA, fill = 'yellowgreen', alpha = 0.3)
+
+#---------------------------------------------------------------------------
+
+NewFRA_regulation <- read_sf(paste(path, shapes_subfolder, "NewFRA_regulation/boxPaca_polygon_4326.shp", sep = ""))
+
+p + geom_sf(data = NewFRA_regulation, fill = 'yellowgreen', alpha = 0.3)
+
+#---------------------------------------------------------------------------
+
+zone_90_100_simplified <- read_sf(paste(path, shapes_subfolder, "zone_90_100_simplified/zone_90_100_simplifiee_Visvalingram_0_05_deg_accroche_dm_polygon_4326.shp", sep = ""))
+
+p + geom_sf(data = zone_90_100_simplified, fill = 'yellowgreen', alpha = 0.3)
+
+#---------------------------------------------------------------------------
+
+Offshore_closure_z1 <- read_sf(paste(path, shapes_subfolder, "Offshore_closures/zone1.shp", sep = ""))
+
+Offshore_closure_z2 <- read_sf(paste(path, shapes_subfolder, "Offshore_closures/zone2.shp", sep = ""))
+
+Offshore_closure_z3 <- read_sf(paste(path, shapes_subfolder, "Offshore_closures/zone3.shp", sep = ""))
+
+# Group the Offshore_closures into one file
+Offshore_permanent_spdf <- rbind(Offshore_closure_z1, Offshore_closure_z2, Offshore_closure_z3)
+
+p + geom_sf(data = Offshore_permanent_spdf, fill = 'yellowgreen', alpha = 0.3)
+
+#---------------------------------------------------------------------------
+
+Offshore_closure_seasonal <- read_sf(paste(path, shapes_subfolder, "Offshore_closures/Offshore_closure_seasonal_final.shp", sep = ""))
+
+p + geom_sf(data = Offshore_closure_seasonal, fill = 'yellowgreen', alpha = 0.3)
+
+```
+
+# Create spatial points for port of calls
+
+Because we are not interested in squares use the actual gps coords. These were pulled from:
+
+For Grau du Roi, Sète, and Marseille:
+
+https://latitude.to/map/fr/france/cities/ 
+
+For all others:
+
+https://www.toutendroit.com/en/article-le-grau-d-agde-1884412/ 
+https://www.gps-latitude-longitude.com/gps-coordinates-of-port-la-nouvelle
+https://www.countrycoordinate.com/city-port-de-bouc-france/
+
+```{r main_ports}
+
+Abbreviation <- c("GST", "XST", "CST", "GPV", "CMT", "XMA")
+Name <- c("Grau-du-Roi", "Sete", "Le-Grau-d'Adge", "Port-la-Nouvelle", "Port-de-Bouc", "Marseille")
+cell <- c("La43.5Lo4.1", "La43.35Lo3.6", "La43.25Lo3.4", "La43.0Lo3.05", "La43.4Lo4.9", "La43.25Lo5.35")                  
+longitude <- c(4.13559, 3.69278, 3.447424, 3.043916, 4.985931, 5.38107)
+latitude <- c(43.53881, 43.4028, 	43.282701, 43.021342, 43.405449, 43.29695)
+
+Ports <- data.frame(Abbreviation, Name, cell, longitude, latitude)
+head(Ports)
+
+# convert Ports to an spatial points data.frame
+Ports.wgs84 <- st_as_sf(Ports,coords = c("longitude", "latitude"), crs = st_crs(4326))
+
+GPV.wgs84 <- subset(Ports.wgs84, Name == "Port-la-Nouvelle")
+CST.wgs84 <- subset(Ports.wgs84, Name == "Le-Grau-d'Adge")
+XST.wgs84 <- subset(Ports.wgs84, Name == "Sete")
+GST.wgs84 <- subset(Ports.wgs84, Name == "Grau-du-Roi")
+CMT.wgs84 <- subset(Ports.wgs84, Name == "Port-de-Bouc")
+XMA.wgs84 <- subset(Ports.wgs84, Name == "Marseille")
+
+```
+
+# Create a custom theme for the map legends
+
+```{r themes}
+
+text_theme <- theme(axis.title = element_blank(), axis.text.y = element_text(margin=margin(t=0,r=0,b=0,l=0), size = 15), axis.text.x.bottom = element_text(margin=margin(t=0,r=0,b=0,l=0), size = 15), strip.text = element_text(size=15), panel.spacing = unit(0.35, "cm"))
+
+```
+
+# Create custom scales
+
+For the spatial closure legend. 
+
+```{r sptl.lgend.cols}
+
+cols <- c("#003366" = str_wrap("Seasonal Offshore Extensions Applies to Gears: OTB, OTT, GNS, and LLS Seasonally (Oct-Dec) or allYear", 28),
+          "#b2182b" = str_wrap("Offshore Permanent Closures Applies to Gears: OTB, OTT, GNS, LLS allYear", 28),
+          "#FF33FF" = str_wrap("90-100 Isobaths Closures Applies to Gears: OTB and OTT Seasonally (Sept-Apr) or allYear", 28),
+          "#614B00" = str_wrap("Northward Expansion of FRA Applies to Gears: OTB and OTT Seasonally (Nov-Apr) or allYear", 28))
+
+cols2 <- ("#614B00" = str_wrap("Original Fishing Restricted Area [FRA] Boundaries Applies to Gears: OTB and OTT allYear", 28))
+
+```
+
+For the figure without a spatial closure legend.
+
+```{r non.sptl.legend.cols}
+
+cols3 <- c("Offshore_closure_seasonal" = "#003366",
+           "Offshore_permanent_spdf" = "#b2182b",
+           "zone_90_100_simplified" = "#FF33FF",
+           "NewFRA_regulation" = "#614B00")
+
+cols4 <- c("FRA" = "#614B00")
+
+```
+
+# Reorder the groups that we are interested in
+
+```{r global.reorder}
+
+EffortMetierZonesPLUS.correct2.2024 <- 
+  fread(file = paste(path,'Data/EffortMetierZonesPLUS.correct2.csv', sep = ''),
+        sep = ",")
+
+EffortMetierZonesPLUS.correct_reorder <- 
+  EffortMetierZonesPLUS.correct2.2024 %>% mutate(
+    SceName_short =  
+      recode_factor(SceName,
+                  "StatusQuo"= "a",
+                  "Trawler_30_Red"= "b",
+                  "AllGears_30_Red" = "c",
+                  "Trawler_40_Red" = "d",
+                  "AllGears_40_Red"= "e",
+                  "Trawler_50_Red"= "f",
+                  "AllGears_50_Red"= "g",
+                  "Trawler_10_20_30"= "h",
+                  "AllGears_10_20_30"= "i",
+                  "Trawler_10_17.5_25_32.5_40"= "j",
+                  "AllGears_10_17.5_25_32.5_40"= "k",
+                  "Trawler_10_20_30_40_50"= "l",
+                  "AllGears_10_20_30_40_50"= "m",
+                  "Original_FRA_allYear"= "n",
+                  "Northward_Expansion_of_FRA_Season"= "o",
+                  "Northward_Expansion_of_FRA_allYear" = "p",
+                  "90-100_Isobaths_Closure_Season"= "q",
+                  "90-100_Isobaths_Closure_allYear"= "r", 
+                  "Offshore_Closures_Season"= "s",
+                  "Offshore_Closures_allYear"= "t",
+                  "Northward_Expansion_of_FRA_90-100m_Offshore_Closures_Combined"= "u",
+                  "Northward_Expansion_of_FRA_Offshore_Closures_Combined" = "v",
+                  "Northward_Expansion_of_FRA_90-100m_Offshore_allYear_Closures_Combined" = "w",
+                  "Northward_Expansion_of_FRA_Offshore_allYear_Closures_Combined" = "x",
+                  "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures"= "y",
+                  "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures"= "z",
+                  "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures_allGears"= "aa",
+                  "Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures_allGears"= "bb"
+                ))
+
+# View(EffortMetierZonesPLUS.correct_reorder)
+
+```
+
+# Create a Combined Effort map by Scenario and Year
+
+Notes, it was decided to create two quantile scales to compare canyon and continental shelf outcomes. Subset by cell id.
+
+## Create a Custom Secondary Palette
+
+Required for the scale_fill_manual function.
+
+```{r canyon.palette}
+
+Canyon_pal <- c("#f3e6f3","#e8cce8","#d199d1","#b966b9","#a233a2","#971997","#8b008b")
+pie(rep(1, 7), col = Canyon_pal)
+
+```
+
+## Apendix F, Figs. F.2 - F.6
+
+Note: You will need to move the legends around to fit everything. 
+
+```{r effort.redistribution.maps}
+
+Continental_cells <- 
+  read.csv(file = paste(path, 'Data/Continental_cells.csv', sep = ''))
+
+Continental_cells <- unique(Continental_cells$x)
+
+Canyon_cells <- 
+  read.csv(paste(path, 'Data/Canyon_cells.csv', sep = ''))
+
+Canyon_cells <- unique(Canyon_cells$x)
+
+EffortAggregatedZones <- aggregate(NewEffort ~ cell + longitude + latitude + YEAR +
+                                     SceName_short + SceName, data =
+                                     EffortMetierZonesPLUS.correct_reorder, FUN = sum)
+
+EffortAggregatedZones$Pop_zone <- NA
+
+EffortAggregated_plateau <- subset(EffortAggregatedZones, cell %in% Continental_cells)
+
+EffortAggregated_plateau$Pop_zone <- 1
+
+EffortAggregated_canyon <- subset(EffortAggregatedZones, cell %in% Canyon_cells)
+
+EffortAggregated_canyon$Pop_zone <- 2
+
+EffortAggregatedZones2 <- rbind(EffortAggregated_plateau, EffortAggregated_canyon)
+
+unique(is.na(EffortAggregatedZones2))
+
+unique(EffortAggregatedZones2$NewEffort)
+
+zone_effort_plots  = F
+
+if (zone_effort_plots == FALSE){
+
+for (s in unique(EffortAggregatedZones2$SceName)){
+    effort_scen_subset <- EffortAggregatedZones2[EffortAggregatedZones2$SceName == s, ]
+    print(s)
+
+    Map_label <- unique(effort_scen_subset$SceName)
+    
+    # Shift so that longitude corresponds to the center of the ISIS-Fish cell
+    effort_scen_subset$longitude <- effort_scen_subset$longitude + 0.025
+    
+    # Shift so that latitude corresponds to the center of the ISIS-Fish cell
+    effort_scen_subset$latitude <- effort_scen_subset$latitude + 0.025
+      
+    # Create a sf object
+    effort_scen_subset_wgs84 <- st_as_sf(effort_scen_subset,
+                                         coords = c("longitude", "latitude"), 
+                                         crs = st_crs(4326))
+    # Create gridded polygon values
+    effort_scen_subset_stars <- st_rasterize(effort_scen_subset_wgs84,
+                                             st_as_stars(st_bbox(grid), 
+                                                         values = NA_real_, 
+                                                         dx = 0.05, 
+                                                         dy = 0.05))
+    
+    effort_scen_subset_sf <- st_as_sf(effort_scen_subset_stars)
+    
+    effort_scen_subset_sf_shelf <- subset(effort_scen_subset_sf, 
+                                          Pop_zone == 1)
+    
+    # get quantile breaks. Add .00001 offset to catch the lowest value
+    breaks_qt_shelf <- 
+      classIntervals(c(min(effort_scen_subset_sf_shelf$NewEffort) -
+                         .00001, effort_scen_subset_sf_shelf$NewEffort), n = 7,
+                     style = "quantile")
+    
+    effort_scen_subset_sf_shelf <- 
+      mutate(effort_scen_subset_sf_shelf, Effort.cut_shelf = 
+               cut(NewEffort, breaks_qt_shelf$brks))
+    
+    effort_scen_subset_sf_canyon <- subset(effort_scen_subset_sf, 
+                                           Pop_zone == 2)
+    
+    # get quantile breaks. Add .00001 offset to catch the lowest value
+    breaks_qt_canyon <- 
+      classIntervals(c(min(effort_scen_subset_sf_canyon$NewEffort) -
+                         .00001, effort_scen_subset_sf_canyon$NewEffort), 
+                     n = 7, style = "quantile")
+
+    effort_scen_subset_sf_canyon <- 
+      mutate(effort_scen_subset_sf_canyon, Effort.cut_canyon = 
+               cut(NewEffort, breaks_qt_canyon$brks))
+    
+    e.m.1 <- ggplot() +
+      geom_sf(data = grid, color = "grey") +
+      geom_sf(data = effort_scen_subset_sf_shelf, 
+              aes(fill = Effort.cut_shelf), 
+              color = "transparent", 
+              alpha = 0.8) +
+      scale_fill_brewer(name = "Zone 1",
+                        palette = "Blues") +
+      guides(fill=guide_legend(order = 1))+
+      new_scale_fill() +
+      geom_sf(data = effort_scen_subset_sf_canyon, 
+              aes(fill = Effort.cut_canyon), 
+              color = "transparent", alpha = 0.8) +
+      scale_fill_manual(name = "Zone 2",
+                        values = Canyon_pal) +
+      theme_bw()+
+      theme(legend.title = element_text(size = 14), legend.title.align = 0, 
+            legend.text = element_text(size = 12), legend.spacing = unit(0.001, 'cm'),
+            legend.position="right", legend.box = "horizontal") +
+      text_theme
+    
+    e.m.1
+    
+    e.m.1.legend <- gtable_filter(ggplot_gtable(ggplot_build(e.m.1)), "guide-box") 
+    
+    e.m.2 <- ggplot() +
+      geom_sf(data = grid, 
+          color = "grey") + 
+      geom_sf(data = zone_90_100_simplified,
+              aes(color = "#FF33FF"),
+              fill = "transparent", 
+              linewidth = 0.5) +
+      geom_sf_pattern(data = FRA, 
+                      aes(pattern_fill = "#614B00"), 
+                      pattern_fill2 = "transparent", 
+                      pattern_colour = "transparent", 
+                      color = "#614B00", 
+                      fill = "transparent", 
+                      pattern_aspect_ratio = 1.8, 
+                      linewidth = 0.5, 
+                      pattern_spacing = 0.01) +
+      geom_sf(data = NewFRA_regulation, 
+              aes(color = "#614B00"), 
+              fill = "transparent", 
+              linewidth = 0.5) +
+      geom_sf(data = Offshore_closure_seasonal,
+              aes(color = "#003366"),
+              fill = "transparent", 
+              linewidth = 0.25) +
+      geom_sf(data = Offshore_permanent_spdf, 
+              aes(color = "#b2182b"),
+              fill = "transparent", 
+              linewidth = 0.5) +
+      scale_color_identity(name = "Closure Measures", 
+                           labels = cols,
+                           guide = guide_legend("color")) +
+      scale_pattern_fill_identity(name = element_blank(), 
+                                  labels = cols2,
+                                  guide = guide_legend("pattern_fill"))+ 
+      guides(color = guide_legend(order = 1),
+             pattern_fill = guide_legend(order = 2)) +
+      theme_bw() +
+      theme(legend.title = element_blank(), legend.text = element_text(size = 12),
+            legend.margin = unit(0.00, 'cm'), legend.spacing = unit(1, 'cm'),
+            legend.position="left", legend.box = "vertical", legend.key.height =
+              unit(1.52, 'cm'), legend.key.width = unit(1.5, 'cm')) +
+      text_theme
+   
+    e.m.2
+    
+    e.m.2.legend <- gtable_filter(ggplot_gtable(ggplot_build(e.m.2)), "guide-box") 
+    
+    e.m.no.legend <-ggplot() +
+      geom_sf(data = grid, 
+              color = "grey") + 
+      geom_sf(data = effort_scen_subset_sf_shelf, 
+              aes(fill = Effort.cut_shelf), 
+              color = "transparent", 
+              alpha = 0.8) +
+      scale_fill_brewer(effort_scen_subset_sf_shelf,
+                        name = "Zone 1",
+                        palette = "Blues") +
+      guides(fill=guide_legend(order = 1))+
+      new_scale_fill() +
+      geom_sf(data = effort_scen_subset_sf_canyon, 
+              aes(fill = Effort.cut_canyon), 
+              color = "transparent", 
+              alpha = 0.8) +
+      scale_fill_manual(effort_scen_subset_sf_canyon,
+                        name = "Zone 2", 
+                        values = Canyon_pal) +
+      geom_sf(data = grid, 
+          color = "grey") + 
+      geom_sf(data = zone_90_100_simplified,
+            aes(color = "#FF33FF"),
+            fill = "transparent", 
+            linewidth = 0.5) +
+      geom_sf_pattern(data = FRA, 
+                    aes(pattern_fill = "#614B00"), 
+                    pattern_fill2 = "transparent", 
+                    pattern_colour = "transparent", 
+                    color = "#614B00", 
+                    fill = "transparent", 
+                    pattern_aspect_ratio = 1.8, 
+                    linewidth = 0.5, 
+                    pattern_spacing = 0.01) +
+      geom_sf(data = NewFRA_regulation, 
+            aes(color = "#614B00"), 
+            fill = "transparent", 
+            linewidth = 0.5) +
+      geom_sf(data = Offshore_closure_seasonal,
+            aes(color = "#003366"),
+            fill = "transparent", 
+            linewidth = 0.25) +
+      geom_sf(data = Offshore_permanent_spdf, 
+              aes(color = "#b2182b"),
+              fill = "transparent", 
+              linewidth = 0.5) +
+      scale_color_identity(name = "Closure Measures", 
+                          labels = cols,
+                          guide = guide_legend("color")) +
+      scale_pattern_fill_identity(name = element_blank(), 
+                                  labels = cols2,
+                                  guide = guide_legend("pattern_fill"))+
+      geom_sf(data = GDL_crop, 
+              color = "#ae8f60", 
+              size = 0.7, 
+              fill = "#E1C699") +
+      geom_sf(data = GPV.wgs84, size = 1) +
+      geom_sf_text(data = GPV.wgs84, 
+                   aes(label = Abbreviation),
+                   size = 3.5, 
+                   color = "black",
+                   nudge_x = -0.02,
+                   nudge_y = 0.04) +
+      geom_sf(data = CST.wgs84, size = 1) +
+      geom_sf_text(data = CST.wgs84, 
+                   aes(label = paste0(Name, " (", Abbreviation, ")", sep = '')),
+                   size = 3.5, 
+                   color = "black", 
+                   nudge_x = -0.18,
+                   nudge_y = 0.04) +
+      geom_sf(data = XST.wgs84, size = 1) +
+      geom_sf_text(data = XST.wgs84, 
+                   aes(label = paste0(Name, " (", Abbreviation, ")", sep = '')),
+                   size = 3.5, 
+                   color = "black", 
+                   nudge_x = -0.10, 
+                   nudge_y = 0.04) +
+      geom_sf(data = GST.wgs84, size = 1) +
+      geom_sf_text(data = GST.wgs84, 
+                   aes(label = paste0(Name, " (", Abbreviation, ")", sep = '')),
+                   size = 3.5, 
+                   color = "black", 
+                   nudge_x = -0.01,
+                   nudge_y = 0.04) +
+      geom_sf(data = CMT.wgs84, size = 1) +
+      geom_sf_text(data = CMT.wgs84, 
+                   aes(label = paste0(Name, " (", Abbreviation, ")", sep = '')),
+                   size = 3.5, 
+                   color = "black", 
+                   nudge_x = 0.05,
+                   nudge_y = 0.04) +
+      geom_sf(data = XMA.wgs84, size = 1) +
+      geom_sf_text(data = XMA.wgs84 , 
+                   aes(label = paste0(Name, " (", Abbreviation, ")", sep = '')),
+                   size = 3.5, 
+                   color = "black", 
+                   nudge_x = 0.20,
+                   nudge_y = 0.04) +
+      annotation_scale(location = "br", 
+                       pad_x = unit(0.85, "cm"),
+                       pad_y = unit(0.5, "cm"),
+                       text_cex = 1,
+                       tick_height = 0.9)+ 
+      annotation_north_arrow(location = "tl", 
+                             which_north = "true", 
+                             height = unit(1, "cm"), 
+                             width = unit(1, "cm"), 
+                             pad_x = unit(1.25, "cm"), 
+                             pad_y = unit(0.75, "cm")) +
+      theme_bw()+
+      theme(axis.title = element_blank(),legend.position = "none") +
+      text_theme
+    
+    plotlegends <- arrangeGrob(e.m.1.legend, e.m.2.legend, heights = c(0.45, 0.55))
+    
+    plotNew <- arrangeGrob(e.m.no.legend, plotlegends, widths = c(0.67,0.33))
+    
+    plotNew.ggplot <- ggplotify::as.ggplot(plotNew)
+    
+    print(plotNew.ggplot)
+    
+    file.name <- paste("2024_Effort_Re-distribution- ", Map_label, sep = '')
+    
+    ggsave2(filename=paste(file.name,".pdf",sep=''),plot=plotNew.ggplot,device="pdf",
+            path=paste(path,"Figures/",sep=""), dpi=1200, width = 29.7, height=17,
+            unit="cm",
+                      limitsize = FALSE)
+    
+      }
+  }
+
+```

@@ -1,0 +1,549 @@
+---
+title: "MEDISIS Values OtherSpecies.Rmd"
+author: "Stephanie Hopkins"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document:
+    toc: yes
+---
+
+STOP!!!
+
+In order to run this code you must first have the following files:
+
+1) "EffNomtot_6.4_without-0s.csv"
+2) "EffNomtot_6.4_true_0s.csv"
+2) "Final_VPUEs.csv" These are the 2017 values
+
+A ReadMe.txt file has been created to help facilitate the work flow you should take.
+
+# Setup paths, data, and libraries
+
+```{r setup, include=FALSE}
+
+rm(list=ls())
+
+knitr::opts_chunk$set(echo = TRUE, message=FALSE, results = "hide")
+
+list.of.packages <- c("data.table","tidyverse","reshape2")
+
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+
+library(reshape2)
+library(data.table)
+library(tidyverse)
+
+# To Replace with your file directory
+dir <- "C:/Users/steph/Documents"
+
+MEDISIS <- "/MEDISIS/Part2.Analysing.the.simulation.output/"
+
+path <- paste(dir,MEDISIS,sep="")
+
+```
+
+# Load Only Nominal Effort
+
+```{r effort}
+
+name_RData_6.4_effort <- 'EffNomtot_6.4_without-0s'
+EffNomtot_6.4 <- fread(paste(path, "Data/", name_RData_6.4_effort,'.csv',sep = ''))
+
+nameRDATA_clean <- 'EffNomtot_6.4_true_0s'
+EffNomtot_6.4_matched <- fread(paste(path, "Data/", nameRDATA_clean, '.csv', sep = ''))
+
+EffNomtot_6.4 <- rbind(EffNomtot_6.4, EffNomtot_6.4_matched)
+
+rm(EffNomtot_6.4_matched)
+
+```
+
+# Join the simulation design table to the simulation output
+
+Apply the names of the Scenarios in the column designating their numeric values and graft this to the Data.
+
+```{r simulation.bind}
+
+simuDesign <- '/MEDISIS/Part1.Reproducing.the.simulation.data/ISIS.Fish.Input.Tables/simulation_design_28'
+
+simulationDesign <- fread(paste(dir, simuDesign,".csv", sep=""), sep=';', h=F)
+
+colnames(simulationDesign) =  c('InitialAbundance','Recruitment','Connectivity','Scenarios')
+
+simulationDesign$simu <- seq(0, 503, 1)
+
+step <- unique(EffNomtot_6.4$step)
+nbYear <- length(step)/12 
+YEAR <- sort(rep(seq(2015,2014+nbYear,1), 12))
+MONTH <- rep(seq(1,12,1),nbYear)
+tabStep <- data.frame(step, YEAR, MONTH)
+
+EffNomtot_6.4 <- inner_join(EffNomtot_6.4, tabStep, by=c('step'))
+EffNomtot_6.4 <- inner_join(EffNomtot_6.4, simulationDesign, by=c('simu'))
+
+table_Sce_6.4 <- data.frame(Scenarios=as.character(c(0:27)),SceName=c("StatusQuo","Trawler_30_Red","Trawler_40_Red","Trawler_50_Red","Trawler_10_20_30","Trawler_10_17.5_25_32.5_40","Trawler_10_20_30_40_50","AllGears_30_Red","AllGears_40_Red","AllGears_50_Red","AllGears_10_20_30","AllGears_10_17.5_25_32.5_40","AllGears_10_20_30_40_50","Original_FRA_allYear","Northward_Expansion_of_FRA_Season","Northward_Expansion_of_FRA_allYear","90-100_Isobaths_Closure_Season","90-100_Isobaths_Closure_allYear","Offshore_Closures_Season","Offshore_Closures_allYear","Northward_Expansion_of_FRA_90-100m_Offshore_Closures_Combined","Northward_Expansion_of_FRA_90-100m_Offshore_allYear_Closures_Combined","Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures","Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures_allGears","Northward_Expansion_of_FRA_Offshore_Closures_Combined","Northward_Expansion_of_FRA_Offshore_allYear_Closures_Combined","Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures","Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures_allGears"))
+
+```
+
+# Filter data
+
+Note that while we parameterise OTB_XST_18-24 and OTM_CMT_18-24 in ISIS-Fish, these are not active metier or they do not target hake.
+
+```{r drop.inactive.metier}
+
+EffNomtot_6.4 <- subset(EffNomtot_6.4, !metier %in% c("OTB_XST_18-24","OTM_CMT_18-24"))
+
+dim(EffNomtot_6.4)
+# [1] 1935360  11
+
+```
+
+# Combine all values into a single data table
+
+This part is broken into several smaller steps, but essentially we want to merge observation data and simplify the nominal effort data. Calculate the total catch size and aggregate.
+
+```{r nominal.effort.table}
+
+# For Nominal Effort by métier:
+effort_yearmon_metier <- setNames(aggregate(value~metier+YEAR+MONTH+simu+InitialAbundance+Recruitment+Connectivity+Scenarios,data=EffNomtot_6.4,sum),c("METIER","YEAR","MONTH","simu","InitialAbundance","Recruitment","Connectivity","Scenarios","Nominal_Effort"))
+
+#View(effort_year_metier)
+
+effort_yearmon_metier <- merge(effort_yearmon_metier, table_Sce_6.4, by = c("Scenarios"), all.x = TRUE)
+
+effort_check1 <- subset(effort_yearmon_metier, InitialAbundance == 0 & Recruitment == 0 & Connectivity == 0 & Scenarios == 16 & YEAR %in% c(2020, 2024))
+
+effort_check1.1 <- aggregate(Nominal_Effort ~ YEAR + MONTH + METIER, 
+                             data = effort_check1, FUN = sum, 
+                             na.action = na.omit)
+
+dim(effort_check1.1)
+# [1] 552   4
+
+```
+
+# Create a second metier id to join VPUE on
+
+We need a year month unique value per scenario groups, which utilizes specific VPUE metier ids to match scenarios with SceName.
+
+Assign original FRA scenarios:
+
+```{r second.met.FRA}
+
+effort_yearmon_metier_fra <- effort_yearmon_metier %>%
+  filter(SceName == "Original_FRA_allYear", YEAR > 2019)
+
+effort_yearmon_metier_fra$METIER2 <- 
+  paste(effort_yearmon_metier_fra$METIER, "_FRA", sep="")
+
+summary(effort_yearmon_metier_fra)
+
+```
+
+Assign northward expansion of FRA - seasonal scenarios:
+
+```{r second.met.NW.Expan.FRA.seas}
+
+effort_yearmon_metier_newfra.se <- effort_yearmon_metier %>%
+  filter(SceName == "Northward_Expansion_of_FRA_Season", YEAR > 2019)
+
+effort_yearmon_metier_newfra.se$METIER2 <- paste(effort_yearmon_metier_newfra.se$METIER, "_newFRA.reg.se", sep="")
+
+```
+
+Assign northward expansion of FRA - permanent scenarios:
+
+```{r second.met.NW.Expan.FRA.perm}
+
+effort_yearmon_metier_newfra.yr <- effort_yearmon_metier %>%
+  filter(SceName == "Northward_Expansion_of_FRA_allYear", YEAR > 2019)
+
+effort_yearmon_metier_newfra.yr$METIER2 <- paste(effort_yearmon_metier_newfra.yr$METIER, "_newFRA.reg.yr", sep="")
+
+```
+
+Assign 90-100m isobath closure - seasonal scenarios:
+
+```{r second.met.90.100m.iso.seas}
+
+effort_yearmon_metier_iso_se <- effort_yearmon_metier %>%
+  filter(SceName == "90-100_Isobaths_Closure_Season", YEAR > 2019)
+
+effort_yearmon_metier_iso_se$METIER2 <- paste(effort_yearmon_metier_iso_se$METIER, "_iso.se", sep="")
+
+```
+
+Assign 90-100m isobath closure - permanent scenarios:
+
+```{r second.met.90.100m.iso.perm}
+
+effort_yearmon_metier_iso_yr <- effort_yearmon_metier %>%
+  filter(SceName == "90-100_Isobaths_Closure_allYear", YEAR > 2019)
+
+effort_yearmon_metier_iso_yr$METIER2 <- paste(effort_yearmon_metier_iso_yr$METIER, "_iso.yr", sep="")
+
+```
+
+Assign offshore closure - seasonal scenarios:
+
+Recall this is a network of three permanent closure sites and a seasonal extension that is added from October 15th to December 15th. 
+
+```{r offshore.closure.seas}
+
+effort_yearmon_metier_offshore_se <- effort_yearmon_metier %>%
+  filter(SceName == "Offshore_Closures_Season", YEAR > 2019)
+
+effort_yearmon_metier_offshore_se$METIER2 <- paste(effort_yearmon_metier_offshore_se$METIER, "_offshore.se", sep="")
+
+```
+
+Assign offshore closure - seasonal scenarios:
+
+Recall this is a network of three permanent closure sites, we change the seasonal extension to a permanent expansion. 
+
+```{r offshore.closure.perm}
+
+effort_yearmon_metier_offshore_yr <- effort_yearmon_metier %>%
+  filter(SceName == "Offshore_Closures_allYear", YEAR > 2019)
+
+effort_yearmon_metier_offshore_yr$METIER2 <- paste(effort_yearmon_metier_offshore_yr$METIER, "_offshore.yr", sep="")
+
+```
+
+Assign combined spatial closure network with isobath - seasonal scenarios:
+
+```{r csptl.network.w.iso.seas}
+
+effort_yearmon_metier_csptl.w.iso.se <- effort_yearmon_metier %>%
+  filter(SceName == "Northward_Expansion_of_FRA_90-100m_Offshore_Closures_Combined", YEAR > 2019)
+
+effort_yearmon_metier_csptl.w.iso.se$METIER2 <- paste(effort_yearmon_metier_csptl.w.iso.se$METIER, "_csptl.w.iso.se", sep="")
+
+```
+
+Assign combined spatial closure network without 90-100m isobath closure - seasonal scenarios:
+
+```{r csptl.network.wo.iso.seas}
+
+effort_yearmon_metier_csptl.wo.iso.se <- effort_yearmon_metier %>%
+  filter(SceName == "Northward_Expansion_of_FRA_Offshore_Closures_Combined",
+         YEAR > 2019)
+
+effort_yearmon_metier_csptl.wo.iso.se$METIER2 <- paste(effort_yearmon_metier_csptl.wo.iso.se$METIER, "_csptl.wo.iso.se", sep="")
+
+```
+
+Assign combined spatial closure network with isobath - permanent scenarios:
+
+```{r csptl.network.w.iso.perm}
+
+effort_yearmon_metier_csptl.w.iso.yr <- effort_yearmon_metier %>%
+  filter(SceName == "Northward_Expansion_of_FRA_90-100m_Offshore_allYear_Closures_Combined", YEAR > 2019)
+
+effort_yearmon_metier_csptl.w.iso.yr$METIER2 <- paste(effort_yearmon_metier_csptl.w.iso.yr$METIER, "_csptl.w.iso.yr", sep="")
+
+```
+
+Assign combined spatial closure network without 90-100m isobath closure - permanent scenarios:
+
+```{r csptl.network.wo.iso.perm}
+
+effort_yearmon_metier_csptl.wo.iso.yr <- effort_yearmon_metier %>%
+  filter(SceName == "Northward_Expansion_of_FRA_Offshore_allYear_Closures_Combined", YEAR > 2019)
+
+effort_yearmon_metier_csptl.wo.iso.yr$METIER2 <- paste(effort_yearmon_metier_csptl.wo.iso.yr$METIER, "_csptl.wo.iso.yr", sep="")
+
+```
+
+Assign effort reduction and combined spatial closure network with 90-100m isobath closure - seasonal scenarios:
+
+```{r effort.red.csptl.network.w.iso.perm}
+
+effort_French_metier_spatial_scenarios_w.iso <- c("Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures",
+"Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_90-100m_Offshore_Closures_allGears")
+
+effort_yearmon_metier_effort.csptl.w.iso <- effort_yearmon_metier %>%
+  filter(SceName %in% effort_French_metier_spatial_scenarios_w.iso, YEAR > 2019)
+
+effort_yearmon_metier_effort.csptl.w.iso$METIER2 <- paste(effort_yearmon_metier_effort.csptl.w.iso$METIER, "_effort.csptl.w.iso", sep="")
+
+```
+
+Assign effort reduction and combined spatial closure network without 90-100m isobath closure - seasonal scenarios:
+
+```{r effort.red.csptl.network.wo.iso.perm}
+
+effort_yearmon_metier_spatial_scenarios_wo.iso <- c("Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures",
+"Combined_Red_10_17.5-40_Northward_Expansion_of_FRA_Offshore_Closures_allGears")
+
+effort_yearmon_metier_effort.csptl.wo.iso <- effort_yearmon_metier %>% filter(SceName %in% effort_yearmon_metier_spatial_scenarios_wo.iso, YEAR > 2019)
+
+effort_yearmon_metier_effort.csptl.wo.iso$METIER2 <- paste(effort_yearmon_metier_effort.csptl.wo.iso$METIER, "_effort.csptl.wo.iso", sep="")
+
+```
+
+# Filter out all non-spatial scenario metiers
+
+For these you will need to match on METIER, YEAR, MONTH.
+
+```{r non.sptl.closure.scen}
+
+effort_yearmon_metier_nonsptl_scenarios <- c("StatusQuo","Trawler_30_Red","Trawler_40_Red","Trawler_50_Red","Trawler_10_20_30","Trawler_10_17.5_25_32.5_40","Trawler_10_20_30_40_50","AllGears_30_Red","AllGears_40_Red","AllGears_50_Red","AllGears_10_20_30","AllGears_10_17.5_25_32.5_40","AllGears_10_20_30_40_50")
+
+effort_yearmon_metier_nonsptl.pt1 <- effort_yearmon_metier %>%
+  filter(SceName %in% effort_yearmon_metier_nonsptl_scenarios) 
+
+effort_yearmon_metier_nonsptl.pt2 <- effort_yearmon_metier %>%
+  filter(!SceName %in% effort_yearmon_metier_nonsptl_scenarios, YEAR < 2020)
+
+summary(effort_yearmon_metier_nonsptl.pt2)
+
+effort_yearmon_metier_nonsptl <- rbind(effort_yearmon_metier_nonsptl.pt1, effort_yearmon_metier_nonsptl.pt2)
+
+effort_yearmon_metier_nonsptl$METIER2 <- effort_yearmon_metier_nonsptl$METIER
+
+```
+
+# Merge all data frames with renamed metier
+
+```{r join.met2.data}
+
+effort_yearmon_metier.pt1 <- rbind(
+  effort_yearmon_metier_fra,
+  effort_yearmon_metier_newfra.se, 
+  effort_yearmon_metier_newfra.yr, 
+  effort_yearmon_metier_iso_se, 
+  effort_yearmon_metier_iso_yr, 
+  effort_yearmon_metier_offshore_se, 
+  effort_yearmon_metier_offshore_yr, 
+  effort_yearmon_metier_csptl.w.iso.se, 
+  effort_yearmon_metier_csptl.w.iso.yr, 
+  effort_yearmon_metier_effort.csptl.w.iso, 
+  effort_yearmon_metier_csptl.wo.iso.se, 
+  effort_yearmon_metier_csptl.wo.iso.yr, 
+  effort_yearmon_metier_effort.csptl.wo.iso, 
+  effort_yearmon_metier_nonsptl)
+
+dim(effort_yearmon_metier.pt1)
+# [1] 1391040  11
+
+dim(distinct(effort_yearmon_metier.pt1))
+# [1] 1391040  11
+
+unique(effort_yearmon_metier.pt1$METIER2)
+# 504 metiers to match
+
+unique(effort_yearmon_metier.pt1$METIER)
+
+# Create an ID based on scenario context
+effort_yearmon_metier.pt1$combisim <- paste0("Init",effort_yearmon_metier.pt1$InitialAbundance,"_Recr",effort_yearmon_metier.pt1$Recruitment,"_Conn",effort_yearmon_metier.pt1$Connectivity,"_Scen",effort_yearmon_metier.pt1$Scenarios)
+
+length(unique(effort_yearmon_metier.pt1$combisim))
+# 504 entries
+
+View(effort_yearmon_metier.pt1)
+
+```
+
+# Replicate Effort to match each taxon and add taxon column
+
+```{r extend.data}
+
+# Replicate effort data
+effort_yearmon_metier.pt2 <- unique(effort_yearmon_metier.pt1) %>% 
+  slice(rep(1:n(), 10))
+
+# View(effort_yearmon_metier.pt2)
+
+dim(effort_yearmon_metier.pt2)
+# [1] 13910400  12
+
+species.list <- c("Solea solea", "Illex spp.", "Loliginidae", "Mullus spp.",
+                  "Scomber scombrus", "Lophius spp.", "Trisopterus minutus",
+                  "Octopus vulgaris and Eledone spp.",
+                  "Engraulis encrasicolus", "Others")
+
+# Create taxon list to fill vector 13910400/10 = 1391040
+effort_yearmon_metier.pt2$TAXON_GROUP_NAME <- rep(species.list, each =  1391040)
+
+colnames(effort_yearmon_metier.pt2)
+
+# View(effort_yearmon_metier.pt2)
+
+# Check for NA values
+unique(is.na(effort_yearmon_metier.pt2))
+
+unique(effort_yearmon_metier.pt2$METIER)
+
+unique(effort_yearmon_metier.pt2$METIER2)
+
+```
+
+# Load VPUE data 
+
+Note there is a problem with the data join and even still the revenues in the data set are lower than the GFCM values. 
+
+```{r vpue}
+
+Final_VPUEs <- read.csv(paste(path, 'Data/Revenues/Final_VPUEs.csv', sep=""),
+                        sep = ";")
+
+unique(Final_VPUEs$TAXON_GROUP_NAME)
+
+Final_VPUEs <- subset(Final_VPUEs, !TAXON_GROUP_NAME == "Merluccius merluccius")
+
+dim(Final_VPUEs)
+# [1] 236534  5
+
+Final_VPUEs.distinct <- distinct(Final_VPUEs)
+
+dim(Final_VPUEs.distinct)
+# [1] 236534  5
+
+head(Final_VPUEs.distinct)
+
+unique(Final_VPUEs.distinct$METIER)
+
+names(Final_VPUEs.distinct)[3] <- "METIER2"
+
+# For all metier except those with GNS_FRA in the character string
+Final_VPUEs.distinct.excludeGNS <- Final_VPUEs.distinct %>%
+  filter (!grepl('GNS_FRA', METIER2))
+
+unique(Final_VPUEs.distinct.excludeGNS$METIER)
+
+Final_VPUEs.distinct.excludeGNS$METIER <-
+  substr(Final_VPUEs.distinct.excludeGNS$METIER2, 1, 13)
+
+unique(Final_VPUEs.distinct.excludeGNS$METIER)
+
+# For all metier with GNS_FRA in the character string
+Final_VPUEs.distinct.GNS <- Final_VPUEs.distinct %>%
+  filter (grepl('GNS_FRA', METIER2))
+
+unique(Final_VPUEs.distinct.GNS$METIER2)
+
+Final_VPUEs.distinct.GNS$METIER <- substr(Final_VPUEs.distinct.GNS$METIER2, 1, 7)
+
+unique(Final_VPUEs.distinct.GNS$METIER)
+
+Final_VPUEs.w_Metier <- 
+  rbind(Final_VPUEs.distinct.excludeGNS, Final_VPUEs.distinct.GNS)
+
+```
+
+# Check for outliers
+
+```{r oulier.check}
+
+Final_VPUE_metier.list <- unique(Final_VPUEs.w_Metier$METIER2)
+Final_VPUE_metier.list
+
+effort_yearmon_metier.pt2.nomatch <- effort_yearmon_metier.pt2 %>%
+  filter(!METIER2 %in% Final_VPUE_metier.list)
+
+unique(effort_yearmon_metier.pt2.nomatch$METIER2)
+
+```
+
+# Join data sets
+
+```{r vpue.plus.met2.data.frame}
+
+effort_year_metier_vpue_taxon <- left_join(effort_yearmon_metier.pt2,
+                                           Final_VPUEs.w_Metier, 
+                                           by = c("YEAR", "MONTH", "METIER",
+                                                  "METIER2", "TAXON_GROUP_NAME"))
+
+dim(effort_year_metier_vpue_taxon)
+# [1] 17663760  14
+
+# View(effort_year_metier_vpue_taxon)
+
+effort_year_metier_vpue_taxon_distinct <- distinct(effort_year_metier_vpue_taxon)
+
+dim(effort_year_metier_vpue_taxon_distinct)
+# [1] 17663760  14
+
+unique(is.na(effort_year_metier_vpue_taxon_distinct))
+
+# Recode na VPUE as 0
+effort_year_metier_vpue_taxon_distinct$VPUE[is.na(effort_year_metier_vpue_taxon_distinct$VPUE)] <- 0
+
+range(effort_year_metier_vpue_taxon_distinct$VPUE)
+
+unique(is.na(effort_year_metier_vpue_taxon_distinct))
+
+```
+
+# Check outputs
+
+```{r check.join}
+
+check_VPUE_test1 <- filter(effort_year_metier_vpue_taxon_distinct, YEAR %in% c(2020, 2024) & combisim == "Init0_Recr0_Conn0_Scen3")
+
+check_VPUE_test1
+
+# VPUE should be the same between years
+check_VPUE_test2 <- aggregate(VPUE ~ YEAR + TAXON_GROUP_NAME, data = check_VPUE_test1, sum, na.action = na.omit)
+
+check_VPUE_test2
+
+# Effort should be identical
+check_VPUE_test3 <- aggregate(Nominal_Effort ~ YEAR + TAXON_GROUP_NAME, data = check_VPUE_test1, sum, na.action = na.omit)
+
+check_VPUE_test3
+
+# View(effort_year_metier_vpue_taxon)
+
+```
+
+# Calculate revenues
+
+Aggregations will be handled in a separate file: *MEDITS.Revenues.bySpecies.Rmd*.
+
+```{r revenue.values}
+
+effort_year_metier_vpue_taxon_distinct$Revenues <-
+  effort_year_metier_vpue_taxon_distinct$Nominal_Effort *
+  effort_year_metier_vpue_taxon_distinct$VPUE
+
+unique(is.na(effort_year_metier_vpue_taxon_distinct))
+
+```
+
+# Explore and save the data
+
+```{r explore.revenues}
+
+pathRData_6.4 <- 'Data/' 
+
+save(effort_year_metier_vpue_taxon_distinct, 
+     file = paste(path, pathRData_6.4, 'effort_year_metier_vpue_taxon_distinct', '.RData', sep=''))
+
+check_revenues <- filter(effort_year_metier_vpue_taxon_distinct, 
+                         YEAR == 2017 & combisim == "Init0_Recr0_Conn0_Scen0")
+
+check_revenues <- sum(check_revenues$Revenues)
+check_revenues
+# [1] 25914435
+
+check_revenues2 <- filter(effort_year_metier_vpue_taxon_distinct,
+                          YEAR %in% c(2020, 2024) & combisim ==
+                            "Init0_Recr0_Conn0_Scen16")
+
+check_revenues2 <- aggregate(Revenues ~ YEAR + TAXON_GROUP_NAME, 
+                             data = check_revenues2, FUN = sum, 
+                             na.action = na.omit)
+
+check_revenues2
+
+check_revenues3 <- check_revenues2 %>%
+  filter(YEAR == 2020)
+
+sum(check_revenues3$Revenues)
+# [1] 25430622
+
+```
+
