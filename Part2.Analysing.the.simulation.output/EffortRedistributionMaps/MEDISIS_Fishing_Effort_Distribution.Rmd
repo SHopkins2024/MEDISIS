@@ -122,7 +122,11 @@ p + geom_sf(data = Offshore_closure_seasonal, fill = 'yellowgreen', alpha = 0.3)
 
 Because we are not interested in squares use the actual gps coords. These were pulled from:
 
+<<<<<<< HEAD
 For Grau du Roi, Sète, and Marseille:
+=======
+For Grand du Roi, Sète, and Marseille:
+>>>>>>> 47bed0620551ce537ae199460bc472d176dbb760
 
 https://latitude.to/map/fr/france/cities/ 
 
@@ -135,7 +139,11 @@ https://www.countrycoordinate.com/city-port-de-bouc-france/
 ```{r main_ports}
 
 Abbreviation <- c("GST", "XST", "CST", "GPV", "CMT", "XMA")
+<<<<<<< HEAD
 Name <- c("Grau-du-Roi", "Sete", "Le-Grau-d'Adge", "Port-la-Nouvelle", "Port-de-Bouc", "Marseille")
+=======
+Name <- c("Grand-du-Roi", "Sete", "Le-Grau-d'Adge", "Port-la-Nouvelle", "Port-de-Bouc", "Marseille")
+>>>>>>> 47bed0620551ce537ae199460bc472d176dbb760
 cell <- c("La43.5Lo4.1", "La43.35Lo3.6", "La43.25Lo3.4", "La43.0Lo3.05", "La43.4Lo4.9", "La43.25Lo5.35")                  
 longitude <- c(4.13559, 3.69278, 3.447424, 3.043916, 4.985931, 5.38107)
 latitude <- c(43.53881, 43.4028, 	43.282701, 43.021342, 43.405449, 43.29695)
@@ -149,7 +157,11 @@ Ports.wgs84 <- st_as_sf(Ports,coords = c("longitude", "latitude"), crs = st_crs(
 GPV.wgs84 <- subset(Ports.wgs84, Name == "Port-la-Nouvelle")
 CST.wgs84 <- subset(Ports.wgs84, Name == "Le-Grau-d'Adge")
 XST.wgs84 <- subset(Ports.wgs84, Name == "Sete")
+<<<<<<< HEAD
 GST.wgs84 <- subset(Ports.wgs84, Name == "Grau-du-Roi")
+=======
+GST.wgs84 <- subset(Ports.wgs84, Name == "Grand-du-Roi")
+>>>>>>> 47bed0620551ce537ae199460bc472d176dbb760
 CMT.wgs84 <- subset(Ports.wgs84, Name == "Port-de-Bouc")
 XMA.wgs84 <- subset(Ports.wgs84, Name == "Marseille")
 
